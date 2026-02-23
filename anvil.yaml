@@ -1,12 +1,34 @@
 allow_embedding: false
 dependencies: []
-name: M3 App 2
-package_name: M3_App_2
+name: PrestoPlan (using Plotly in Anvil)
+package_name: PrestoPlan__using_Plotly_in_Anvil_
 renamed: true
 runtime_options:
   client_version: '3'
   legacy_features: {bootstrap3: true, class_names: true}
-  server_spec: {base: python310-minimal}
+  server_spec: {base: python310-standard}
   version: 3
-services: []
+secrets:
+  db_host:
+    type: secret
+    value: {PNPA47C5ET65PQSU: ''}
+  db_name:
+    type: secret
+    value: {PNPA47C5ET65PQSU: ''}
+  db_password:
+    type: secret
+    value: {PNPA47C5ET65PQSU: ''}
+  db_port:
+    type: secret
+    value: {PNPA47C5ET65PQSU: ''}
+  db_user:
+    type: secret
+    value: {PNPA47C5ET65PQSU: ''}
+services:
+- client_config: {}
+  server_config: {}
+  source: /runtime/services/tables.yml
+- client_config: {}
+  server_config: {}
+  source: /runtime/services/anvil/secrets.yml
 startup_form: Form1
