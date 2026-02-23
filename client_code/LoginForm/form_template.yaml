@@ -3,70 +3,49 @@ components:
   - components:
     - layout_properties: {grid_position: 'AAABAC,AAABAC'}
       name: lbl_title
-      properties:
-        font_size: 24
-        bold: true
-        text: PrestoPlan
-        align: center
+      properties: {align: center, bold: true, font_size: 24, text: PrestoPlan}
       type: Label
     - layout_properties: {grid_position: 'AAACAC,AAACAC'}
       name: lbl_subtitle
-      properties:
-        font_size: 14
-        text: Project Schedule Viewer
-        align: center
-        foreground: '#666666'
+      properties: {align: center, font_size: 14, foreground: '#666666', text: Project Schedule Viewer}
       type: Label
     - layout_properties: {grid_position: 'AAADAC,AAADAC'}
       name: lbl_email
-      properties:
-        text: Email
-        bold: true
+      properties: {bold: true, text: Email}
       type: Label
-    - layout_properties: {grid_position: 'AAAEAC,AAAEAC'}
+    - event_bindings: {}
+      layout_properties: {grid_position: 'AAAEAC,AAAEAC'}
       name: txt_email
-      properties:
-        placeholder: Enter your email address
+      properties: {placeholder: Enter your email address}
       type: TextBox
     - layout_properties: {grid_position: 'AAAFAC,AAAFAC'}
       name: lbl_password
-      properties:
-        text: Password
-        bold: true
+      properties: {bold: true, text: Password}
       type: Label
-    - layout_properties: {grid_position: 'AAAGAC,AAAGAC'}
+    - event_bindings: {}
+      layout_properties: {grid_position: 'AAAGAC,AAAGAC'}
       name: txt_password
-      properties:
-        placeholder: Enter your password
-        hide_text: true
+      properties: {hide_text: true, placeholder: Enter your password}
       type: TextBox
     - layout_properties: {grid_position: 'AAAHAC,AAAHAC'}
       name: chk_remember_me
-      properties:
-        text: Remember me
+      properties: {text: Remember me}
       type: CheckBox
     - layout_properties: {grid_position: 'AAAIAC,AAAIAC'}
       name: lbl_error
-      properties:
-        text: ''
-        foreground: '#cc0000'
-        visible: false
+      properties: {foreground: '#cc0000', text: '', visible: false}
       type: Label
-    - layout_properties: {grid_position: 'AAAJAB,AAAJAB'}
+    - event_bindings: {}
+      layout_properties: {grid_position: 'AAAJAB,AAAJAB'}
       name: btn_login
-      properties:
-        text: Log In
-        role: primary-color
+      properties: {role: primary-color, text: Log In}
       type: Button
     name: card_login
-    properties:
-      col_widths: '{}'
+    properties: {col_widths: '{}'}
     type: ColumnPanel
   layout_properties: {slot: default}
   name: content_panel
-  properties:
-    col_widths: '{}'
-    align: center
+  properties: {align: center, col_widths: '{}'}
   type: ColumnPanel
 - layout_properties: {slot: nav-right}
   name: navbar_links

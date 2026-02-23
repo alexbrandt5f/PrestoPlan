@@ -1,6 +1,7 @@
 from ._anvil_designer import LoginFormTemplate
 from anvil import *
 import anvil.server
+import anvil.js
 
 # Module-level storage for session state
 # These persist for the lifetime of the browser session
@@ -22,17 +23,29 @@ class LoginForm(LoginFormTemplate):
   """
     Login form - entry point for the PrestoPlan application.
     Handles user authentication and navigates to main form on success.
+    Remember Me stores email in browser local storage.
     """
 
   def __init__(self, **properties):
     # Initialize form components
     self.init_components(**properties)
-    # Set focus to email box when form loads
-    self.txt_email.focus()
+
+    # Restore remembered email if previously saved
+    try:
+      remembered_email = anvil.js.window.localStorage.getItem('prestaplan_email')
+      if remembered_email:
+        self.txt_email.text = remembered_email
+        self.chk_remember_me.checked = True
+        self.txt_password.focus()
+      else:
+        self.txt_email.focus()
+    except Exception:
+      self.txt_email.focus()
 
     # --------------------------------------------------------------------------
     #  EVENT: Login button clicked
     # --------------------------------------------------------------------------
+  @handle("btn_login", "click")
   def btn_login_click(self, **event_args):
     """
         Validates inputs, calls auth.login on the server, and navigates to
@@ -66,7 +79,16 @@ class LoginForm(LoginFormTemplate):
       result = anvil.server.call('login', email, password)
 
       if result.get('success'):
-        # Store session state at module level
+        # Handle remember me
+        try:
+          if self.chk_remember_me.checked:
+            anvil.js.window.localStorage.setItem('prestaplan_email', email)
+          else:
+            anvil.js.window.localStorage.removeItem('prestaplan_email')
+        except Exception:
+          pass  # localStorage not critical - ignore if unavailable
+
+          # Store session state at module level
         _session_token = result.get('token')
         _current_user = result.get('user')
 
@@ -87,15 +109,17 @@ class LoginForm(LoginFormTemplate):
       self.btn_login.text = 'Log In'
 
     # --------------------------------------------------------------------------
-    #  EVENT: Password field - allow Enter key to trigger login
+    #  EVENT: Password field - pressing Enter triggers login
     # --------------------------------------------------------------------------
+  @handle("txt_password", "pressed_enter")
   def txt_password_pressed_enter(self, **event_args):
     """Pressing Enter in the password field triggers login."""
     self.btn_login_click()
 
     # --------------------------------------------------------------------------
-    #  EVENT: Email field - allow Enter key to move to password
+    #  EVENT: Email field - pressing Enter moves focus to password
     # --------------------------------------------------------------------------
+  @handle("txt_email", "pressed_enter")
   def txt_email_pressed_enter(self, **event_args):
     """Pressing Enter in the email field moves focus to password."""
     self.txt_password.focus()
