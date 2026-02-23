@@ -11,19 +11,25 @@ runtime_options:
 secrets:
   db_host:
     type: secret
-    value: {PNPA47C5ET65PQSU: ''}
+    value: {PNPA47C5ET65PQSU: UhNOof6n1YZk2R96RUbm5kKu56Nq/mcpOO3E1EmKHo09EyyUgC2Y9jKOj5tIUAKJRWfRcUekAWWuJL0TsJtXAT0k45/mehLsvdKv2BpRd7jXUqvtyYUPGJw1ob3drqPW0HknSuhPuLwFAhHrXjf5wbBWiWqtWxPijQkq1d2+yi//dQ==}
   db_name:
     type: secret
-    value: {PNPA47C5ET65PQSU: ''}
+    value: {PNPA47C5ET65PQSU: CLSo/zF4/PYVyfpD2w4PRiPrBGYBgOXs+G8C2BxIDnxe4eH8bfbloAC/vzePzlgG8lUBovs7fuXl7Bx3J0433DqNCfxAlG6eu3II8PlNhzKzcuefq37DR4N3w6yjNJtL5mqPYl3QkA==}
   db_password:
     type: secret
-    value: {PNPA47C5ET65PQSU: ''}
+    value: {PNPA47C5ET65PQSU: 3vKRL59DxuovJcxLXBwEhhjrkz/hFYIG+OI+GUOgdHrb05N8+o+DgNT85y28cbTEAIUseIzHFVYs0ouYpsOtUBy9EVyU5M1J6fGkHLBkPgRIUPyh29u97MI5pzY4GsGUOQO4y/gzOnUGvpKM/3cz}
   db_port:
     type: secret
-    value: {PNPA47C5ET65PQSU: ''}
+    value: {PNPA47C5ET65PQSU: m2rJJmVresymvn7OZqJLD6O2WGD/O7bNh0gkqYOjHUbBDNSTIXryeLj/dOCCTcbfQv8nwiwbjwQQKd/WExw93Pj3TXn0Gz45O6BjYZz9Dj6CKhIjOyP79epEr/02aH7UDzmW}
   db_user:
     type: secret
-    value: {PNPA47C5ET65PQSU: ''}
+    value: {PNPA47C5ET65PQSU: C6mdR21Yp6PLxWURLLym2APWj4pwzhEBHOfIKZmxgb7gDRT5yuW3wgeWdIMbR29VOzO3PkcNsdRlz3crGac5AeNf4VpTGCC080ip9GJkF9PTul4lIGUZJZRUHwsVyYMcoMouLJ+/Z9L8+TBsrIIKwAd+WyVXtDPiH/R+Nw==}
+  supabase_anon_key:
+    type: secret
+    value: {PNPA47C5ET65PQSU: GsuCMQeT8qUjdnhhV8fJODHsb8JlvxAKgU12rRLbRMJRMkBpgBuIu7fbONFEAPA6uVvsHNDoJ2OhjLVhiYlc9T9/7yTqGt493p2/nIFwGQeT4CJMDcZmkYIgX559LpmV+R/DxwXE17UCGtk8wftimMyXcJ/Om6vt63xSuAT4dQHuRjZUzk0MjC8/MTf6BTixCK2XzjREhUdkqxdnG0zmc7y+uw1G4sa2Gfn5RvXI3JaF1iLIOkhLFqMQpuIelluiZCaae1DnNnVYbEE8VHZJutsiohyXl6EP/kiHlV6gkccZlQmfNGWC/+d4H5HxzEdyxMnGQJ3fqtp0ZyQirVvpHJVwO7cMJEP88zMqX0Z5nE21Y/DWhlFPyCMxuEVBdPUcAmsGCsRt3Nfr9B2vDw8xtQN+2eCNr+Ovvn5QC1jnUL4QnAFBeKwbwkxjrUDgKiR78uDzJpNLsg6YefGowscwFoRnO9SW26pgb5umfZge0d+la1XppzKLq6RyaOuCkcTgc4szwPOVYA3nA7itBUvQnUVuuIUTJUFZ7R/gwKDJusx1Mh5BYKkNAThiVT1lKERiOlGSkMQit7YqmTNQxD1VCk1CYfjoteAiHIKump5oklDNIgLOiyZoHZ9qcHjVpykOg7xqiAB1Rq04QohzhN+7VxOT3rytsaaIgQK6dQ15h44bJR/mjvQ78xNMhzmD7a4e09um/ntRBvm7iXT8VKeMED56sGTppswmscbsnDM=}
+  supabase_project_ref:
+    type: secret
+    value: {PNPA47C5ET65PQSU: hoVy/0ZJk39g9I9wCXCcz/PGB4lPygGdgVxS04q8bqzaQCDpKRqNaJHqT0055UVILZe1w65GOWix1sb1URmx0sLGAyR+6jXd47/oXhxNt6eisxz83Dqe+MbrZ4NuM7uOpqMN72Z8Zn7hrYJeDMUNhEGsUg==}
 services:
 - client_config: {}
   server_config: {}
