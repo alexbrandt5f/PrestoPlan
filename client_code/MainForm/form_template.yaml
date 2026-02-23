@@ -1,283 +1,216 @@
 components:
 - components:
+  # ── TOOLBAR ────────────────────────────────────────────────────────────────
   - components:
-    # ── TOOLBAR ROW ──────────────────────────────────────────────────────────
+    - name: btn_toggle_filters
+      properties:
+        text: '▶ Filters'
+      type: Button
+    - name: lbl_project
+      properties:
+        text: 'No project selected'
+        bold: true
+        foreground: '#1565c0'
+      type: Label
+    - name: lbl_import
+      properties:
+        text: ''
+        foreground: '#555555'
+      type: Label
+    - name: btn_select_project
+      properties:
+        text: 'Change Project'
+      type: Button
+    - name: btn_toggle_details
+      properties:
+        text: 'Hide Details'
+      type: Button
+    name: pnl_toolbar
+    properties: {}
+    type: FlowPanel
+
+  # ── MAIN AREA (filters + gantt) ────────────────────────────────────────────
+  - components:
+
+    # ── FILTER PANEL ──────────────────────────────────────────────────────────
     - components:
-      - layout_properties: {grid_position: 'AAABAA,AAABAA'}
-        name: btn_toggle_filters
+      - name: lbl_filter_heading
         properties:
-          text: '▶ Filters'
-          role: ''
-        type: Button
-      - layout_properties: {grid_position: 'AAABAB,AAABAB'}
-        name: lbl_project
-        properties:
-          text: 'No project selected'
+          text: 'Filters'
           bold: true
-          foreground: '#1565c0'
+          font_size: 14
         type: Label
-      - layout_properties: {grid_position: 'AAABAC,AAABAC'}
-        name: lbl_import
+      - name: lbl_filter_status
+        properties:
+          text: 'Status'
+          bold: true
+        type: Label
+      - name: chk_not_started
+        properties:
+          text: 'Not Started'
+          checked: true
+        type: CheckBox
+      - name: chk_in_progress
+        properties:
+          text: 'In Progress'
+          checked: true
+        type: CheckBox
+      - name: chk_complete
+        properties:
+          text: 'Complete'
+          checked: true
+        type: CheckBox
+      - name: lbl_filter_criticality
+        properties:
+          text: 'Criticality'
+          bold: true
+        type: Label
+      - name: chk_critical
+        properties:
+          text: 'Critical'
+          checked: true
+        type: CheckBox
+      - name: chk_near_critical
+        properties:
+          text: 'Near Critical'
+          checked: true
+        type: CheckBox
+      - name: chk_non_critical
+        properties:
+          text: 'Non Critical'
+          checked: true
+        type: CheckBox
+      - name: lbl_filter_actcode
+        properties:
+          text: 'Activity Code'
+          bold: true
+        type: Label
+      - name: dd_actcode_type
+        properties:
+          placeholder: 'Select code type...'
+        type: DropDown
+      - name: dd_actcode_value
+        properties:
+          placeholder: 'Select value...'
+        type: DropDown
+      - name: btn_apply_filters
+        properties:
+          text: 'Apply Filters'
+          role: primary-color
+        type: Button
+      - name: btn_clear_filters
+        properties:
+          text: 'Clear Filters'
+        type: Button
+      name: pnl_filters
+      properties:
+        visible: false
+      type: ColumnPanel
+
+    # ── GANTT PANEL ───────────────────────────────────────────────────────────
+    - components:
+      - name: lbl_no_data
+        properties:
+          text: 'Select a project and import to view the Gantt chart.'
+          align: center
+          foreground: '#888888'
+          font_size: 14
+          visible: true
+        type: Label
+      - name: plot_gantt
+        properties:
+          visible: false
+        type: Plot
+      name: pnl_gantt
+      properties: {}
+      type: ColumnPanel
+
+    name: pnl_main
+    properties: {}
+    type: FlowPanel
+
+  # ── DETAILS PANE ───────────────────────────────────────────────────────────
+  - components:
+    - components:
+      - name: lbl_details_title
+        properties:
+          text: 'Activity Details'
+          bold: true
+          font_size: 13
+        type: Label
+      - name: lbl_activity_id
         properties:
           text: ''
           foreground: '#555555'
         type: Label
-      - layout_properties: {grid_position: 'AAABAD,AAABAD'}
-        name: btn_select_project
+      - name: lbl_activity_name
         properties:
-          text: 'Change Project'
-          role: ''
-        type: Button
-      - layout_properties: {grid_position: 'AAABAE,AAABAE'}
-        name: btn_toggle_details
-        properties:
-          text: 'Hide Details'
-          role: ''
-        type: Button
-      name: pnl_toolbar
-      properties:
-        col_widths: '{}'
+          text: ''
+          bold: true
+        type: Label
+      name: pnl_details_header
+      properties: {}
       type: FlowPanel
 
-    # ── MAIN CONTENT ROW (filters + gantt side by side) ───────────────────
     - components:
-
-      # ── FILTER PANEL (left, hidden by default) ──────────────────────────
-      - components:
-        - layout_properties: {grid_position: 'AAABAA,AAABAA'}
-          name: lbl_filter_heading
-          properties:
-            text: 'Filters'
-            bold: true
-            font_size: 14
-          type: Label
-
-        - layout_properties: {grid_position: 'AAACAA,AAACAA'}
-          name: lbl_filter_status
-          properties:
-            text: 'Status'
-            bold: true
-          type: Label
-        - layout_properties: {grid_position: 'AAADAA,AAADAA'}
-          name: chk_not_started
-          properties:
-            text: 'Not Started'
-            checked: true
-          type: CheckBox
-        - layout_properties: {grid_position: 'AAAEAA,AAAEAA'}
-          name: chk_in_progress
-          properties:
-            text: 'In Progress'
-            checked: true
-          type: CheckBox
-        - layout_properties: {grid_position: 'AAAFAA,AAAFAA'}
-          name: chk_complete
-          properties:
-            text: 'Complete'
-            checked: true
-          type: CheckBox
-
-        - layout_properties: {grid_position: 'AAAGAA,AAAGAA'}
-          name: lbl_filter_criticality
-          properties:
-            text: 'Criticality'
-            bold: true
-          type: Label
-        - layout_properties: {grid_position: 'AAAHAAA,AAAHAAA'}
-          name: chk_critical
-          properties:
-            text: 'Critical'
-            checked: true
-          type: CheckBox
-        - layout_properties: {grid_position: 'AAAIAA,AAAIAA'}
-          name: chk_near_critical
-          properties:
-            text: 'Near Critical'
-            checked: true
-          type: CheckBox
-        - layout_properties: {grid_position: 'AAAJAA,AAAJAA'}
-          name: chk_non_critical
-          properties:
-            text: 'Non Critical'
-            checked: true
-          type: CheckBox
-
-        - layout_properties: {grid_position: 'AAAKAA,AAAKAA'}
-          name: lbl_filter_actcode
-          properties:
-            text: 'Activity Code'
-            bold: true
-          type: Label
-        - layout_properties: {grid_position: 'AAALAA,AAALAA'}
-          name: dd_actcode_type
-          properties:
-            placeholder: 'Select code type...'
-          type: DropDown
-        - layout_properties: {grid_position: 'AAAMAA,AAAMAA'}
-          name: dd_actcode_value
-          properties:
-            placeholder: 'Select value...'
-          type: DropDown
-
-        - layout_properties: {grid_position: 'AAANAA,AAANAA'}
-          name: btn_apply_filters
-          properties:
-            text: 'Apply Filters'
-            role: primary-color
-          type: Button
-        - layout_properties: {grid_position: 'AAAOAA,AAAOAA'}
-          name: btn_clear_filters
-          properties:
-            text: 'Clear Filters'
-          type: Button
-
-        name: pnl_filters
+      - name: tab_general
         properties:
-          col_widths: '{}'
-          visible: false
-          width: 220
-        type: ColumnPanel
-
-      # ── GANTT CHART PANEL (right, takes remaining space) ─────────────────
-      - components:
-        - layout_properties: {grid_position: 'AAABAA,AAABAA'}
-          name: lbl_no_data
-          properties:
-            text: 'Select a project and import to view the Gantt chart.'
-            align: center
-            foreground: '#888888'
-            font_size: 14
-            visible: true
-          type: Label
-        - layout_properties: {grid_position: 'AAACAA,AAACAA'}
-          name: plot_gantt
-          properties:
-            visible: false
-          type: Plot
-
-        name: pnl_gantt
+          text: 'General'
+          role: primary-color
+        type: Button
+      - name: tab_status
         properties:
-          col_widths: '{}'
-        type: ColumnPanel
-
-      name: pnl_main
-      properties:
-        col_widths: '{}'
+          text: 'Status'
+        type: Button
+      - name: tab_codes
+        properties:
+          text: 'Codes'
+        type: Button
+      - name: tab_relationships
+        properties:
+          text: 'Relationships'
+        type: Button
+      - name: tab_notebook
+        properties:
+          text: 'Notebook'
+        type: Button
+      - name: tab_udfs
+        properties:
+          text: 'UDFs'
+        type: Button
+      name: pnl_details_tabs
+      properties: {}
       type: FlowPanel
 
-    # ── DETAILS PANE (bottom) ─────────────────────────────────────────────
-    - components:
-      - components:
-        - layout_properties: {grid_position: 'AAABAA,AAABAA'}
-          name: lbl_details_title
-          properties:
-            text: 'Activity Details'
-            bold: true
-            font_size: 13
-          type: Label
-        - layout_properties: {grid_position: 'AAABAB,AAABAB'}
-          name: lbl_activity_id
-          properties:
-            text: ''
-            foreground: '#555555'
-          type: Label
-        - layout_properties: {grid_position: 'AAABAC,AAABAC'}
-          name: lbl_activity_name
-          properties:
-            text: ''
-            bold: true
-          type: Label
-        name: pnl_details_header
-        properties:
-          col_widths: '{}'
-        type: FlowPanel
-
-      - components:
-        - layout_properties: {grid_position: 'AAABAA,AAABAA'}
-          name: tab_general
-          properties:
-            text: 'General'
-            role: primary-color
-          type: Button
-        - layout_properties: {grid_position: 'AAABAB,AAABAB'}
-          name: tab_status
-          properties:
-            text: 'Status'
-          type: Button
-        - layout_properties: {grid_position: 'AAABAC,AAABAC'}
-          name: tab_codes
-          properties:
-            text: 'Codes'
-          type: Button
-        - layout_properties: {grid_position: 'AAABAD,AAABAD'}
-          name: tab_relationships
-          properties:
-            text: 'Relationships'
-          type: Button
-        - layout_properties: {grid_position: 'AAABAE,AAABAE'}
-          name: tab_notebook
-          properties:
-            text: 'Notebook'
-          type: Button
-        - layout_properties: {grid_position: 'AAABAF,AAABAF'}
-          name: tab_udfs
-          properties:
-            text: 'UDFs'
-          type: Button
-        name: pnl_details_tabs
-        properties:
-          col_widths: '{}'
-        type: FlowPanel
-
-      - layout_properties: {grid_position: 'AAADAA,AAADAA'}
-        name: pnl_details_content
-        properties:
-          col_widths: '{}'
-          height: 180
-        type: ColumnPanel
-
-      name: pnl_details
-      properties:
-        col_widths: '{}'
-        border: '1px solid #cccccc'
-        background: '#f9f9f9'
+    - name: pnl_details_content
+      properties: {}
       type: ColumnPanel
 
-    name: content_panel
+    name: pnl_details
     properties:
-      col_widths: '{}'
+      border: '1px solid #cccccc'
+      background: '#f9f9f9'
     type: ColumnPanel
 
-  - layout_properties: {slot: nav-title}
-    name: lbl_nav_title
+  layout_properties: {slot: default}
+  name: content_panel
+  properties: {}
+  type: ColumnPanel
+
+# ── NAV BAR ──────────────────────────────────────────────────────────────────
+- components:
+  - name: lbl_nav_user
     properties:
-      text: 'PrestoPlan'
-      bold: true
-      font_size: 16
+      text: ''
     type: Label
-
-  - layout_properties: {slot: nav-right}
-    name: pnl_nav_right
-    properties: {}
-    type: FlowPanel
-
-  - components:
-    - layout_properties: {grid_position: 'AAABAA,AAABAA'}
-      name: lbl_nav_user
-      properties:
-        text: ''
-        foreground: '#ffffff'
-      type: Label
-    - layout_properties: {grid_position: 'AAABAB,AAABAB'}
-      name: btn_logout
-      properties:
-        text: 'Log Out'
-        role: ''
-      type: Button
-    layout_properties: {slot: nav-right}
-    name: navbar_links
-    properties: {}
-    type: FlowPanel
+  - name: btn_logout
+    properties:
+      text: 'Log Out'
+    type: Button
+  layout_properties: {slot: nav-right}
+  name: navbar_links
+  properties: {}
+  type: FlowPanel
 
 container:
   properties: {html: '@theme:standard-page.html'}
