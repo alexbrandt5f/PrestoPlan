@@ -38,8 +38,8 @@ db_schema:
     server: full
     title: Users
 dependencies: []
-name: PrestoPlan (using Plotly in Anvil)
-package_name: PrestoPlan__using_Plotly_in_Anvil_
+name: PrestoPlan
+package_name: PrestoPlan
 renamed: true
 runtime_options:
   client_version: '3'
