@@ -1,4 +1,42 @@
 allow_embedding: false
+db_schema:
+  users:
+    client: none
+    columns:
+    - admin_ui: {order: 0, width: 200}
+      client_hidden: false
+      name: email
+      type: string
+    - admin_ui: {order: 1, width: 200}
+      client_hidden: false
+      name: enabled
+      type: bool
+    - admin_ui: {order: 2, width: 200}
+      client_hidden: false
+      name: last_login
+      type: datetime
+    - admin_ui: {order: 3, width: 200}
+      client_hidden: false
+      name: password_hash
+      type: string
+    - admin_ui: {order: 4, width: 200}
+      client_hidden: false
+      name: n_password_failures
+      type: number
+    - admin_ui: {order: 5, width: 200}
+      client_hidden: false
+      name: confirmed_email
+      type: bool
+    - admin_ui: {order: 6, width: 200}
+      client_hidden: false
+      name: remembered_logins
+      type: simpleObject
+    - admin_ui: {order: 7, width: 200}
+      client_hidden: false
+      name: signed_up
+      type: datetime
+    server: full
+    title: Users
 dependencies: []
 name: PrestoPlan (using Plotly in Anvil)
 package_name: PrestoPlan__using_Plotly_in_Anvil_
@@ -37,4 +75,7 @@ services:
 - client_config: {}
   server_config: {}
   source: /runtime/services/anvil/secrets.yml
+- client_config: {allow_remember_me: true, allow_signup: true, confirm_email: true, enable_automatically: true, remember_me_days: 30, use_email: true, use_token: true}
+  server_config: {user_table: users}
+  source: /runtime/services/anvil/users.yml
 startup_form: Form1

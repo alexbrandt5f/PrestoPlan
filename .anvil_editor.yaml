@@ -6,4 +6,9 @@ unique_ids:
     Form1: XFR7G7ZZBLR5WNC3HFD33GYAU637BD53
   modules: {}
   scripts: {}
-  server_modules: {}
+  server_modules:
+    auth: '1771821493537467664345222.9956'
+    data_access: '1771821502061177872312173.64697'
+    db: '1771821503386537500454797.9988'
+    db_init: '1771821504814475045431831.7342'
+    xer_parser: '1771821506003165380302187.67886'
