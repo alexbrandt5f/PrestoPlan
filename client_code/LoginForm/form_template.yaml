@@ -27,7 +27,8 @@ components:
       name: txt_password
       properties: {hide_text: true, placeholder: Enter your password}
       type: TextBox
-    - layout_properties: {grid_position: 'AAAHAC,AAAHAC'}
+    - event_bindings: {}
+      layout_properties: {grid_position: 'AAAHAC,AAAHAC'}
       name: chk_remember_me
       properties: {text: Remember me}
       type: CheckBox

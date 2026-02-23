@@ -1,217 +1,154 @@
 components:
 - components:
-  # ── TOOLBAR ────────────────────────────────────────────────────────────────
   - components:
-    - name: btn_toggle_filters
-      properties:
-        text: '▶ Filters'
+    - event_bindings: {}
+      name: btn_toggle_filters
+      properties: {text: ▶ Filters}
       type: Button
     - name: lbl_project
-      properties:
-        text: 'No project selected'
-        bold: true
-        foreground: '#1565c0'
+      properties: {bold: true, foreground: '#1565c0', text: No project selected}
       type: Label
     - name: lbl_import
-      properties:
-        text: ''
-        foreground: '#555555'
+      properties: {foreground: '#555555', text: ''}
       type: Label
-    - name: btn_select_project
-      properties:
-        text: 'Change Project'
+    - event_bindings: {}
+      name: btn_select_project
+      properties: {text: Change Project}
       type: Button
-    - name: btn_toggle_details
-      properties:
-        text: 'Hide Details'
+    - event_bindings: {}
+      name: btn_toggle_details
+      properties: {text: Hide Details}
       type: Button
     name: pnl_toolbar
     properties: {}
     type: FlowPanel
-
-  # ── MAIN AREA (filters + gantt) ────────────────────────────────────────────
   - components:
-
-    # ── FILTER PANEL ──────────────────────────────────────────────────────────
     - components:
       - name: lbl_filter_heading
-        properties:
-          text: 'Filters'
-          bold: true
-          font_size: 14
+        properties: {bold: true, font_size: 14, text: Filters}
         type: Label
       - name: lbl_filter_status
-        properties:
-          text: 'Status'
-          bold: true
+        properties: {bold: true, text: Status}
         type: Label
       - name: chk_not_started
-        properties:
-          text: 'Not Started'
-          checked: true
+        properties: {checked: true, text: Not Started}
         type: CheckBox
       - name: chk_in_progress
-        properties:
-          text: 'In Progress'
-          checked: true
+        properties: {checked: true, text: In Progress}
         type: CheckBox
       - name: chk_complete
-        properties:
-          text: 'Complete'
-          checked: true
+        properties: {checked: true, text: Complete}
         type: CheckBox
       - name: lbl_filter_criticality
-        properties:
-          text: 'Criticality'
-          bold: true
+        properties: {bold: true, text: Criticality}
         type: Label
       - name: chk_critical
-        properties:
-          text: 'Critical'
-          checked: true
+        properties: {checked: true, text: Critical}
         type: CheckBox
       - name: chk_near_critical
-        properties:
-          text: 'Near Critical'
-          checked: true
+        properties: {checked: true, text: Near Critical}
         type: CheckBox
       - name: chk_non_critical
-        properties:
-          text: 'Non Critical'
-          checked: true
+        properties: {checked: true, text: Non Critical}
         type: CheckBox
       - name: lbl_filter_actcode
-        properties:
-          text: 'Activity Code'
-          bold: true
+        properties: {bold: true, text: Activity Code}
         type: Label
-      - name: dd_actcode_type
-        properties:
-          placeholder: 'Select code type...'
+      - event_bindings: {}
+        name: dd_actcode_type
+        properties: {placeholder: Select code type...}
         type: DropDown
       - name: dd_actcode_value
-        properties:
-          placeholder: 'Select value...'
+        properties: {placeholder: Select value...}
         type: DropDown
-      - name: btn_apply_filters
-        properties:
-          text: 'Apply Filters'
-          role: primary-color
+      - event_bindings: {}
+        name: btn_apply_filters
+        properties: {role: primary-color, text: Apply Filters}
         type: Button
-      - name: btn_clear_filters
-        properties:
-          text: 'Clear Filters'
+      - event_bindings: {}
+        name: btn_clear_filters
+        properties: {text: Clear Filters}
         type: Button
       name: pnl_filters
-      properties:
-        visible: false
+      properties: {visible: false}
       type: ColumnPanel
-
-    # ── GANTT PANEL ───────────────────────────────────────────────────────────
     - components:
       - name: lbl_no_data
-        properties:
-          text: 'Select a project and import to view the Gantt chart.'
-          align: center
-          foreground: '#888888'
-          font_size: 14
-          visible: true
+        properties: {align: center, font_size: 14, foreground: '#888888', text: Select a project and import to view the Gantt chart., visible: true}
         type: Label
       - name: plot_gantt
-        properties:
-          visible: false
+        properties: {visible: false}
         type: Plot
       name: pnl_gantt
       properties: {}
       type: ColumnPanel
-
     name: pnl_main
     properties: {}
     type: FlowPanel
-
-  # ── DETAILS PANE ───────────────────────────────────────────────────────────
   - components:
     - components:
       - name: lbl_details_title
-        properties:
-          text: 'Activity Details'
-          bold: true
-          font_size: 13
+        properties: {bold: true, font_size: 13, text: Activity Details}
         type: Label
       - name: lbl_activity_id
-        properties:
-          text: ''
-          foreground: '#555555'
+        properties: {foreground: '#555555', text: ''}
         type: Label
       - name: lbl_activity_name
-        properties:
-          text: ''
-          bold: true
+        properties: {bold: true, text: ''}
         type: Label
       name: pnl_details_header
       properties: {}
       type: FlowPanel
-
     - components:
-      - name: tab_general
-        properties:
-          text: 'General'
-          role: primary-color
+      - event_bindings: {}
+        name: tab_general
+        properties: {role: primary-color, text: General}
         type: Button
-      - name: tab_status
-        properties:
-          text: 'Status'
+      - event_bindings: {}
+        name: tab_status
+        properties: {text: Status}
         type: Button
-      - name: tab_codes
-        properties:
-          text: 'Codes'
+      - event_bindings: {}
+        name: tab_codes
+        properties: {text: Codes}
         type: Button
-      - name: tab_relationships
-        properties:
-          text: 'Relationships'
+      - event_bindings: {}
+        name: tab_relationships
+        properties: {text: Relationships}
         type: Button
-      - name: tab_notebook
-        properties:
-          text: 'Notebook'
+      - event_bindings: {}
+        name: tab_notebook
+        properties: {text: Notebook}
         type: Button
-      - name: tab_udfs
-        properties:
-          text: 'UDFs'
+      - event_bindings: {}
+        name: tab_udfs
+        properties: {text: UDFs}
         type: Button
       name: pnl_details_tabs
       properties: {}
       type: FlowPanel
-
     - name: pnl_details_content
       properties: {}
       type: ColumnPanel
-
     name: pnl_details
-    properties:
-      border: '1px solid #cccccc'
-      background: '#f9f9f9'
+    properties: {background: '#f9f9f9', border: '1px solid #cccccc'}
     type: ColumnPanel
-
   layout_properties: {slot: default}
   name: content_panel
   properties: {}
   type: ColumnPanel
-
-# ── NAV BAR ──────────────────────────────────────────────────────────────────
 - components:
   - name: lbl_nav_user
-    properties:
-      text: ''
+    properties: {text: ''}
     type: Label
-  - name: btn_logout
-    properties:
-      text: 'Log Out'
+  - event_bindings: {}
+    name: btn_logout
+    properties: {text: Log Out}
     type: Button
   layout_properties: {slot: nav-right}
   name: navbar_links
   properties: {}
   type: FlowPanel
-
 container:
   properties: {html: '@theme:standard-page.html'}
   type: HtmlTemplate

@@ -5,7 +5,8 @@ unique_ids:
   forms:
     LoginForm: XFR7G7ZZBLR5WNC3HFD33GYAU637BD53
     MainForm: '1771823936175357283183247.7232'
-  modules: {}
+  modules:
+    client_globals: '1771825176410524982618591.38995'
   scripts: {}
   server_modules:
     auth: '1771821493537467664345222.9956'

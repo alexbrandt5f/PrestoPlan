@@ -2,27 +2,13 @@ from ._anvil_designer import LoginFormTemplate
 from anvil import *
 import anvil.server
 import anvil.js
-
-# Module-level storage for session state
-# These persist for the lifetime of the browser session
-_session_token = None
-_current_user = None
-
-
-def get_session_token():
-  """Returns the current session token. Called by other forms."""
-  return _session_token
-
-
-def get_current_user():
-  """Returns the current user dict. Called by other forms."""
-  return _current_user
+from .. import client_globals
 
 
 class LoginForm(LoginFormTemplate):
   """
     Login form - entry point for the PrestoPlan application.
-    Handles user authentication and navigates to main form on success.
+    Handles user authentication and navigates to MainForm on success.
     Remember Me stores email in browser local storage.
     """
 
@@ -49,10 +35,8 @@ class LoginForm(LoginFormTemplate):
   def btn_login_click(self, **event_args):
     """
         Validates inputs, calls auth.login on the server, and navigates to
-        the main form on success. Shows error message on failure.
+        MainForm on success. Shows error message on failure.
         """
-    global _session_token, _current_user
-
     # Clear any previous error
     self._show_error('')
 
@@ -88,9 +72,11 @@ class LoginForm(LoginFormTemplate):
         except Exception:
           pass  # localStorage not critical - ignore if unavailable
 
-          # Store session state at module level
-        _session_token = result.get('token')
-        _current_user = result.get('user')
+          # Store session state in client_globals
+        client_globals.set_session(
+          result.get('token'),
+          result.get('user')
+        )
 
         # Navigate to main form
         open_form('MainForm')
@@ -135,3 +121,8 @@ class LoginForm(LoginFormTemplate):
     else:
       self.lbl_error.text = ''
       self.lbl_error.visible = False
+
+  @handle("chk_remember_me", "change")
+  def chk_remember_me_change(self, **event_args):
+    """This method is called when this checkbox is checked or unchecked"""
+    pass
