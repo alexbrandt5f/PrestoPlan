@@ -63,6 +63,82 @@ def _verify_password(password, stored_hash):
   salt, _ = stored_hash.split(":", 1)
   return _hash_password(password, salt) == stored_hash
 
+# ===========================================================================
+#  CALLABLE FUNCTIONS — Called by Anvil client-side forms (not VBA)
+# ===========================================================================
+
+@anvil.server.callable
+def login(email, password):
+  """
+    Authenticate a user from the Anvil frontend.
+    Called by Form1 login button.
+    
+    Args:
+      email:    user's email address
+      password: plain text password
+      
+    Returns:
+      dict: {success, token, user, message}
+    """
+  try:
+    email = email.strip().lower()
+
+    if not email or not password:
+      return {"success": False, "message": "Email and password are required."}
+
+      # -- Look up user --
+    user = db.query_one(
+      "SELECT user_id, display_name, password_hash, is_superuser, is_active "
+      "FROM app_user WHERE email = %s",
+      [email]
+    )
+
+    if not user:
+      return {"success": False, "message": "Invalid email or password."}
+
+    if not user["is_active"]:
+      return {"success": False, "message": "Your account has been disabled."}
+
+      # -- Verify password --
+    if not _verify_password(password, user["password_hash"]):
+      return {"success": False, "message": "Invalid email or password."}
+
+      # -- Get session timeout from settings --
+    timeout_setting = db.query_one(
+      "SELECT setting_value FROM app_setting "
+      "WHERE setting_key = 'session_timeout_hours'"
+    )
+    timeout_hours = int(timeout_setting["setting_value"]) if timeout_setting else 24
+
+    # -- Create session token --
+    token = secrets.token_urlsafe(48)
+    expires_at = datetime.utcnow() + timedelta(hours=timeout_hours)
+
+    db.execute(
+      "INSERT INTO user_session (user_id, token, expires_at) "
+      "VALUES (%s, %s, %s)",
+      [user["user_id"], token, expires_at]
+    )
+
+    # -- Update last login --
+    db.execute(
+      "UPDATE app_user SET last_login = %s WHERE user_id = %s",
+      [datetime.utcnow(), user["user_id"]]
+    )
+
+    return {
+      "success": True,
+      "token": token,
+      "user": {
+        "user_id": user["user_id"],
+        "display_name": user["display_name"],
+        "is_superuser": user["is_superuser"]
+      }
+    }
+
+  except Exception as e:
+    print(f"[auth.login] ERROR: {e}")
+    return {"success": False, "message": f"Login error: {str(e)}"}
 
 # ===========================================================================
 #  HTTP ENDPOINT HELPERS

@@ -78,4 +78,5 @@ services:
 - client_config: {allow_remember_me: true, allow_signup: true, confirm_email: true, enable_automatically: true, remember_me_days: 30, use_email: true, use_token: true}
   server_config: {user_table: users}
   source: /runtime/services/anvil/users.yml
-startup_form: Form1
+startup: {module: LoginForm, type: form}
+startup_form: null
