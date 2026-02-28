@@ -6,10 +6,10 @@ from .. import client_globals
 
 class MainForm(MainFormTemplate):
   """
-    Main application form for PrestoPlan.
-    Contains the toolbar, collapsible filter panel, Gantt chart area,
-    and the activity details pane at the bottom.
-    """
+  Main application form for PrestoPlan.
+  Contains the toolbar, collapsible filter panel, Gantt chart area,
+  and the activity details pane at the bottom.
+  """
 
   def __init__(self, **properties):
     self.init_components(**properties)
@@ -27,46 +27,46 @@ class MainForm(MainFormTemplate):
       open_form('LoginForm')
       return
 
-      # -- Set up nav bar user display --
+    # -- Set up nav bar user display --
     user = client_globals.current_user
     if user:
       self.lbl_nav_user.text = user.get('display_name', '')
 
-      # -- Show project selector on load --
+    # -- Show project selector on load --
     self._open_project_selector()
 
-    # ==========================================================================
-    #  TOOLBAR EVENTS
-    # ==========================================================================
+  # ==========================================================================
+  #  TOOLBAR EVENTS
+  # ==========================================================================
 
   @handle("btn_toggle_filters", "click")
   def btn_toggle_filters_click(self, **event_args):
     """Show or hide the filter panel."""
     self._filters_visible = not self._filters_visible
     self.pnl_filters.visible = self._filters_visible
-    self.btn_toggle_filters.text = 'Filters' if self._filters_visible else 'Filters'
+    self.btn_toggle_filters.text = '▼ Filters' if self._filters_visible else '▶ Filters'
 
   @handle("btn_toggle_details", "click")
   def btn_toggle_details_click(self, **event_args):
     """Show or hide the details pane at the bottom."""
     self._details_visible = not self._details_visible
     self.pnl_details.visible = self._details_visible
-    self.btn_toggle_details.text = 'Show Details' if not self._details_visible else 'Hide Details'
+    self.btn_toggle_details.text = 'Hide Details' if self._details_visible else 'Show Details'
 
   @handle("btn_select_project", "click")
   def btn_select_project_click(self, **event_args):
     """Open the project/import selector modal."""
     self._open_project_selector()
 
-    # ==========================================================================
-    #  PROJECT SELECTOR
-    # ==========================================================================
+  # ==========================================================================
+  #  PROJECT SELECTOR
+  # ==========================================================================
 
   def _open_project_selector(self):
     """
-        Opens modal alerts to let the user pick a project then an import.
-        Loads project list from server, then import list once project is picked.
-        """
+    Opens modal alerts to let the user pick a project then an import.
+    Loads project list from server, then import list once project is picked.
+    """
     try:
       token = client_globals.session_token
 
@@ -77,7 +77,7 @@ class MainForm(MainFormTemplate):
         alert('You do not have access to any projects. Please contact your administrator.')
         return
 
-        # Build project picker panel
+      # Build project picker panel
       project_choices = [(p['project_name'], p['project_id']) for p in projects]
       project_panel = ColumnPanel()
       project_panel.add_component(Label(text='Select Project:', bold=True))
@@ -109,7 +109,7 @@ class MainForm(MainFormTemplate):
         alert('No imports found for this project. Please upload an XER file first.')
         return
 
-        # Build import picker panel
+      # Build import picker panel
       import_choices = [
         (f"{i.get('import_date', '')} - {i.get('label', 'No label')}", i['import_id'])
         for i in imports
@@ -131,7 +131,7 @@ class MainForm(MainFormTemplate):
       if not result2 or not dd_import.selected_value:
         return
 
-        # Store selections and update display
+      # Store selections and update display
       self._current_project_id = selected_project_id
       self._current_import_id = dd_import.selected_value
       self.lbl_project.text = selected_project_name
@@ -147,15 +147,15 @@ class MainForm(MainFormTemplate):
     except Exception as e:
       alert(f'Error loading projects: {str(e)}')
 
-    # ==========================================================================
-    #  GANTT CHART
-    # ==========================================================================
+  # ==========================================================================
+  #  GANTT CHART
+  # ==========================================================================
 
   def _load_gantt(self):
     """
-        Calls the server to get Gantt data and renders the Plotly chart.
-        Shows a loading message while waiting.
-        """
+    Calls the server to get Gantt data and renders the Plotly chart.
+    Shows a loading message while waiting.
+    """
     if not self._current_project_id or not self._current_import_id:
       return
 
@@ -184,17 +184,17 @@ class MainForm(MainFormTemplate):
 
   def _render_gantt(self, gantt_data):
     """
-        Renders the Plotly horizontal bar chart from gantt_data.
-        Placeholder - full Plotly implementation to follow.
-        """
+    Renders the Plotly horizontal bar chart from gantt_data.
+    Placeholder - full Plotly implementation to follow.
+    """
     # TODO: Build full Plotly Gantt chart here
     task_count = len(gantt_data.get('tasks', []))
     self.lbl_no_data.text = f'Gantt data loaded: {task_count} tasks. Chart rendering coming soon.'
     self.lbl_no_data.visible = True
 
-    # ==========================================================================
-    #  FILTER EVENTS
-    # ==========================================================================
+  # ==========================================================================
+  #  FILTER EVENTS
+  # ==========================================================================
 
   @handle("btn_apply_filters", "click")
   def btn_apply_filters_click(self, **event_args):
@@ -235,9 +235,9 @@ class MainForm(MainFormTemplate):
     except Exception as e:
       alert(f'Error loading activity code values: {str(e)}')
 
-    # ==========================================================================
-    #  DETAILS PANE - TAB EVENTS
-    # ==========================================================================
+  # ==========================================================================
+  #  DETAILS PANE - TAB EVENTS
+  # ==========================================================================
 
   @handle("tab_general", "click")
   def tab_general_click(self, **event_args):
@@ -277,14 +277,15 @@ class MainForm(MainFormTemplate):
     }
     for name, btn in all_tabs.items():
       btn.role = 'primary-color' if name == tab_name else ''
+      btn.bold = (name == tab_name)
 
     self._render_details_tab(tab_name)
 
   def _render_details_tab(self, tab_name):
     """
-        Renders content of the selected details tab.
-        Placeholder - full implementation to follow.
-        """
+    Renders content of the selected details tab.
+    Placeholder - full implementation to follow in Phase 9.
+    """
     self.pnl_details_content.clear()
 
     if not self._selected_task_id:
@@ -293,14 +294,14 @@ class MainForm(MainFormTemplate):
       )
       return
 
-      # TODO: Render actual tab content from cached task data
+    # TODO: Render actual tab content from cached task data (Phase 9)
     self.pnl_details_content.add_component(
       Label(text=f'[{tab_name.upper()} - task {self._selected_task_id} - coming soon]')
     )
 
-    # ==========================================================================
-    #  LOGOUT
-    # ==========================================================================
+  # ==========================================================================
+  #  LOGOUT
+  # ==========================================================================
 
   @handle("btn_logout", "click")
   def btn_logout_click(self, **event_args):
