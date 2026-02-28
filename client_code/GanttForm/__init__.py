@@ -227,7 +227,8 @@ class GanttForm(GanttFormTemplate):
     n_rows       = len(tasks)
     chart_height = n_rows * ROW_HEIGHT + 2
 
-    collapse_state = client_globals.get_collapse_state(self._current_layout_id)
+    if not hasattr(client_globals, "_collapse_state"): client_globals._collapse_state = {}
+    collapse_state = client_globals._collapse_state
     for task in tasks:
       wbs_id = task.get('wbs_id', '')
       if wbs_id and task.get('row_type') == 'WBS' and wbs_id not in collapse_state:
@@ -313,34 +314,37 @@ class GanttForm(GanttFormTemplate):
   </div>
 </div>"""
 
-    # Details pane HTML
-    det_display  = 'flex' if self._details_visible else 'none'
-    details_html = f"""
-<div style="display:flex; align-items:center; gap:8px; padding:4px 8px;
-  background:#e3f2fd; border-bottom:1px solid #90caf9; flex-shrink:0;">
-  <span style="font-weight:bold; font-size:13px;">Activity Details</span>
-  <span id="pp-det-id"   style="color:#555; font-size:12px;"></span>
-  <span id="pp-det-name" style="font-weight:bold; font-size:12px;"></span>
-</div>
-<div style="display:flex; gap:4px; padding:4px 8px;
-  background:#f5f5f5; border-bottom:1px solid #e0e0e0; flex-shrink:0;">
-  {''.join(
-    f'<button id="pp-tab-{t}" onclick="_pp_onTabClick(\'{t}\')"'
-    f' style="padding:3px 10px; font-size:12px; cursor:pointer; border-radius:3px;'
-    f' background:{\"#1565c0\" if t == self._active_tab else \"#e0e0e0\"};'
-    f' color:{\"white\" if t == self._active_tab else \"#333\"};'
-    f' border:none; font-weight:{\"bold\" if t == self._active_tab else \"normal\"};">'
-    f'{label}</button>'
-    for t, label in [
+    # Details pane HTML - pre-compute tab buttons to avoid f-string nesting issues
+    det_display = 'flex' if self._details_visible else 'none'
+    _tab_defs = [
       ('general','General'),('status','Status'),('codes','Codes'),
       ('relationships','Relationships'),('notebook','Notebook'),('udfs','UDFs')
     ]
-  )}
-</div>
-<div id="pp-det-content" style="flex:1; overflow-y:auto; padding:6px 8px;
-  font-family:Arial,sans-serif; font-size:12px;">
-  <em style="color:#888;">Click an activity in the Gantt chart to see details.</em>
-</div>"""
+    _tab_buttons = ''.join(
+      '<button id="pp-tab-' + t + '" onclick="_pp_onTabClick('' + t + '')"'
+      ' style="padding:3px 10px; font-size:12px; cursor:pointer; border-radius:3px;'
+      ' background:' + ('#1565c0' if t == self._active_tab else '#e0e0e0') + ';'
+      ' color:' + ('white' if t == self._active_tab else '#333') + ';'
+      ' border:none; font-weight:' + ('bold' if t == self._active_tab else 'normal') + ';">'
+      + label + '</button>'
+      for t, label in _tab_defs
+    )
+    details_html = (
+      '<div style="display:flex; align-items:center; gap:8px; padding:4px 8px;'
+      ' background:#e3f2fd; border-bottom:1px solid #90caf9; flex-shrink:0;">'
+      '<span style="font-weight:bold; font-size:13px;">Activity Details</span>'
+      '<span id="pp-det-id" style="color:#555; font-size:12px;"></span>'
+      '<span id="pp-det-name" style="font-weight:bold; font-size:12px;"></span>'
+      '</div>'
+      '<div style="display:flex; gap:4px; padding:4px 8px;'
+      ' background:#f5f5f5; border-bottom:1px solid #e0e0e0; flex-shrink:0;">'
+      + _tab_buttons +
+      '</div>'
+      '<div id="pp-det-content" style="flex:1; overflow-y:auto; padding:6px 8px;'
+      ' font-family:Arial,sans-serif; font-size:12px;">'
+      '<em style="color:#888;">Click an activity in the Gantt chart to see details.</em>'
+      '</div>'
+    )
 
     js_data = json.dumps({
       'traces':        traces,
@@ -807,7 +811,8 @@ class GanttForm(GanttFormTemplate):
 
   def _on_collapse_change(self, wbs_id, expanded):
     """Save WBS collapse state when toggled."""
-    client_globals.set_collapse_state(self._current_layout_id, wbs_id, expanded)
+    if not hasattr(client_globals, "_collapse_state"): client_globals._collapse_state = {}
+    client_globals._collapse_state[wbs_id] = expanded
 
   def _on_collapse_all(self, expanded):
     """Save collapse state for all WBS nodes."""
@@ -817,7 +822,8 @@ class GanttForm(GanttFormTemplate):
       if task.get('row_type') == 'WBS':
         wbs_id = task.get('wbs_id', '')
         if wbs_id and (expanded or task.get('indent', 0) == 1):
-          client_globals.set_collapse_state(self._current_layout_id, wbs_id, expanded)
+          if not hasattr(client_globals, "_collapse_state"): client_globals._collapse_state = {}
+    client_globals._collapse_state[wbs_id] = expanded
 
   # --------------------------------------------------------------------------
   #  DETAILS CONTENT RENDERING
@@ -827,14 +833,20 @@ class GanttForm(GanttFormTemplate):
     """Build details tab content as HTML string and push to pp-det-content via JS."""
     self._active_tab = tab_name
 
-    # Update tab button styles
-    tab_buttons_js = '; '.join([
-      f'(function(){{var b=document.getElementById("pp-tab-{t}");'
-      f'if(b){{b.style.background="{("#1565c0" if t==tab_name else "#e0e0e0")}";'
-      f'b.style.color="{("white" if t==tab_name else "#333")}";'
-      f'b.style.fontWeight="{("bold" if t==tab_name else "normal")}"}}})()'
-      for t in ['general','status','codes','relationships','notebook','udfs']
-    ])
+    # Update tab button styles (pre-compute to avoid f-string nesting)
+    _tabs = ['general','status','codes','relationships','notebook','udfs']
+    _tab_js_parts = []
+    for t in _tabs:
+      bg  = '#1565c0' if t == tab_name else '#e0e0e0'
+      col = 'white'   if t == tab_name else '#333'
+      fw  = 'bold'    if t == tab_name else 'normal'
+      _tab_js_parts.append(
+        '(function(){var b=document.getElementById("pp-tab-' + t + '");'
+        'if(b){b.style.background="' + bg + '";'
+        'b.style.color="' + col + '";'
+        'b.style.fontWeight="' + fw + '"}})()'
+      )
+    tab_buttons_js = '; '.join(_tab_js_parts)
     try:
       anvil.js.call_js('_pp_execJs', tab_buttons_js)
     except Exception:
@@ -951,7 +963,6 @@ class GanttForm(GanttFormTemplate):
   #  LOGOUT
   # ==========================================================================
 
-  @handle("btn_logout", "click")
   def btn_logout_click(self, **event_args):
     """Log out and return to login form."""
     try:
