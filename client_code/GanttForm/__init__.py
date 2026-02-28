@@ -8,16 +8,16 @@ from .. import client_globals
 
 
 # ===========================================================================
-#  CONSTANTS  (match PP_* constants in Native Libraries JS)
+#  CONSTANTS  (must match PP_* constants in Native Libraries JS)
 # ===========================================================================
 
-ROW_HEIGHT   = 24
-COL_HEADER_H = 48
-DETAILS_H    = 220
-TOOLBAR_H    = 56
-SIDEBAR_W    = 220
+ROW_HEIGHT   = 24    # px per Gantt row
+COL_HEADER_H = 48    # px for frozen column header (month row + week row)
+DETAILS_H    = 220   # px for details pane
+TOOLBAR_H    = 56    # px for Anvil nav bar
+SIDEBAR_W    = 220   # px for sidebar when open
 
-# WBS band colours by depth
+# WBS band background colours by indent depth
 WBS_COLOURS = {
   1: '#bbdefb',
   2: '#c8e6c9',
@@ -26,13 +26,14 @@ WBS_COLOURS = {
 }
 WBS_COLOUR_DEFAULT = '#f5f5f5'
 
-# Bar colours
+# Bar colours keyed by segment type code
 BAR_COLOURS = {
-  '1': '#1565c0',   # actual
+  '1': '#1565c0',   # actual (completed)
   '2': '#2e7d32',   # normal remaining
-  '3': '#e65100',   # near-critical
-  '4': '#c62828',   # critical
+  '3': '#e65100',   # near-critical remaining
+  '4': '#c62828',   # critical remaining
 }
+
 MILESTONE_COLOURS = {
   'M1': '#1565c0',
   'M2': '#2e7d32',
@@ -45,22 +46,29 @@ class GanttForm(GanttFormTemplate):
   """
   Main Gantt viewer form for PrestoPlan.
 
-  Fixed layout:
-    - Toolbar:       fixed top, full width
-    - Sidebar:       collapsible left panel (layout/filter pickers + GFS)
-    - Gantt area:    fills remaining space; frozen column headers + scrolling rows
-    - Details pane:  fixed bottom, full width
+  Fixed CSS layout:
+    - Anvil nav bar:   fixed top, full width (PP_NAV_H px)
+    - pp-shell:        position:fixed below nav bar, fills to bottom
+      - pp-main-row:   sidebar + gantt area side by side
+        - pp-sidebar:  collapsible left panel (layout/filter pickers)
+        - pp-gantt-area:
+          - pp-col-header:   frozen timescale header (month + week rows)
+          - pp-scroll-body:  col table | splitter | plot pane (scrolls)
+      - pp-details:    fixed-height bottom panel with activity tabs
+
+  All JS sizing is done in _pp_applyLayout() in Native Libraries.
+  Python builds the HTML structure and Plotly traces, JS does all layout.
   """
 
   def __init__(self, **properties):
     self.init_components(**properties)
 
-    # Register with JS for callbacks
+    # Register form with JS so click callbacks can reach Python
     anvil.js.window._prestoplan_form = self
 
-    # -- State --
+    # ---- Internal state ----
     self._details_visible    = True
-    self._sidebar_visible    = True
+    self._sidebar_visible    = False   # sidebar hidden by default
     self._gfs_visible        = False
     self._current_project_id = None
     self._current_import_id  = None
@@ -71,38 +79,38 @@ class GanttForm(GanttFormTemplate):
     self._detail_cache       = {}
     self._row_meta           = []
 
-    # -- Session check --
+    # ---- Session check ----
     if not client_globals.session_token:
       open_form('LoginForm')
       return
 
-    # -- Nav bar --
+    # ---- Nav bar user display ----
     user = client_globals.current_user
     if user:
       self.lbl_nav_user.text = user.get('display_name', '')
 
-    # -- Sidebar dropdowns --
+    # ---- Sidebar dropdowns ----
     self.dd_layout.items        = [('Default layout', 'default')]
     self.dd_saved_filters.items = [('No filter applied', None)]
 
-    # -- Open project selector --
+    # ---- Show project selector on load ----
     self._open_project_selector()
 
   # ==========================================================================
-  #  TOOLBAR
+  #  TOOLBAR EVENTS
   # ==========================================================================
 
   @handle("btn_toggle_sidebar", "click")
   def btn_toggle_sidebar_click(self, **event_args):
-    """Collapse or expand the left sidebar."""
+    """Toggle the left sidebar open/closed via hamburger button."""
     self._sidebar_visible = not self._sidebar_visible
-    self.btn_toggle_sidebar.text = '◀' if self._sidebar_visible else '▶'
+    self.btn_toggle_sidebar.text = '✕' if self._sidebar_visible else '☰'
     anvil.js.call_js('_pp_toggleSidebar', self._sidebar_visible)
 
   @handle("btn_toggle_details", "click")
   def btn_toggle_details_click(self, **event_args):
-    """Show or hide the activity details pane."""
-    self._details_visible    = not self._details_visible
+    """Show or hide the activity details pane at the bottom."""
+    self._details_visible = not self._details_visible
     self.pnl_details.visible = self._details_visible
     self.btn_toggle_details.text = (
       'Hide Details' if self._details_visible else 'Show Details'
@@ -111,18 +119,18 @@ class GanttForm(GanttFormTemplate):
 
   @handle("btn_select_project", "click")
   def btn_select_project_click(self, **event_args):
-    """Open the project/import selector."""
+    """Open the project/import selector modal."""
     self._open_project_selector()
 
   # ==========================================================================
-  #  SIDEBAR
+  #  SIDEBAR EVENTS
   # ==========================================================================
 
   @handle("btn_toggle_gfs", "click")
   def btn_toggle_gfs_click(self, **event_args):
-    """Expand or collapse the Grouping/Filtering/Sorting panel."""
-    self._gfs_visible        = not self._gfs_visible
-    self.pnl_gfs.visible     = self._gfs_visible
+    """Expand or collapse the Grouping/Filtering/Sorting sub-panel."""
+    self._gfs_visible    = not self._gfs_visible
+    self.pnl_gfs.visible = self._gfs_visible
     self.btn_toggle_gfs.text = (
       '▼ Grouping / Filtering / Sorting'
       if self._gfs_visible else
@@ -131,14 +139,14 @@ class GanttForm(GanttFormTemplate):
 
   @handle("dd_layout", "change")
   def dd_layout_change(self, **event_args):
-    """Apply selected layout. Full implementation in future phase."""
+    """Apply selected layout. Full implementation in a future phase."""
     selected = self.dd_layout.selected_value
     if selected:
       self._current_layout_id = selected
 
   @handle("dd_saved_filters", "change")
   def dd_saved_filters_change(self, **event_args):
-    """Apply a saved filter set. Full implementation in future phase."""
+    """Apply a saved filter set. Full implementation in a future phase."""
     pass
 
   # ==========================================================================
@@ -147,8 +155,8 @@ class GanttForm(GanttFormTemplate):
 
   def _open_project_selector(self):
     """
-    Modal project → import picker.
-    Fetches lists from server, stores selection, triggers Gantt load.
+    Two-step modal: user picks a project then an import.
+    Fetches lists from server, stores selections, then triggers Gantt load.
     """
     try:
       token    = client_globals.session_token
@@ -161,13 +169,15 @@ class GanttForm(GanttFormTemplate):
         )
         return
 
-      # Project picker
+      # Step 1: project picker
       project_choices = [
         (p['project_name'], p['project_id']) for p in projects
       ]
       pp = ColumnPanel()
       pp.add_component(Label(text='Select Project:', bold=True))
-      dd_proj = DropDown(items=project_choices, placeholder='Select a project...')
+      dd_proj = DropDown(
+        items=project_choices, placeholder='Select a project...'
+      )
       pp.add_component(dd_proj)
       if self._current_project_id:
         dd_proj.selected_value = self._current_project_id
@@ -184,19 +194,26 @@ class GanttForm(GanttFormTemplate):
         'Unknown Project'
       )
 
-      # Import picker
-      imports = anvil.server.call('get_project_imports', token, selected_project_id)
+      # Step 2: import picker
+      imports = anvil.server.call(
+        'get_project_imports', token, selected_project_id
+      )
       if not imports:
         alert('No imports found for this project. Please upload an XER file first.')
         return
 
       import_choices = [
-        (f"{i.get('import_date', '')} - {i.get('label', 'No label')}", i['import_id'])
+        (
+          f"{i.get('import_date', '')} - {i.get('label', 'No label')}",
+          i['import_id']
+        )
         for i in imports
       ]
       ip = ColumnPanel()
       ip.add_component(Label(text='Select Import:', bold=True))
-      dd_imp = DropDown(items=import_choices, placeholder='Select an import...')
+      dd_imp = DropDown(
+        items=import_choices, placeholder='Select an import...'
+      )
       ip.add_component(dd_imp)
       if self._current_import_id:
         dd_imp.selected_value = self._current_import_id
@@ -207,6 +224,7 @@ class GanttForm(GanttFormTemplate):
       if not dd_imp.selected_value:
         return
 
+      # Store selections and update toolbar labels
       self._current_project_id = selected_project_id
       self._current_import_id  = dd_imp.selected_value
       self.lbl_project.text    = selected_project_name
@@ -215,6 +233,7 @@ class GanttForm(GanttFormTemplate):
         'Unknown Import'
       )
       self.lbl_import.text = f"  {selected_import_label}"
+
       self._load_gantt()
 
     except Exception as e:
@@ -226,8 +245,8 @@ class GanttForm(GanttFormTemplate):
 
   def _load_gantt(self):
     """
-    Fetch Gantt data from server and render.
-    Shows loading message while waiting.
+    Fetch Gantt data from server and render the chart.
+    Shows a loading message while the server call is in progress.
     """
     if not self._current_project_id or not self._current_import_id:
       return
@@ -263,19 +282,23 @@ class GanttForm(GanttFormTemplate):
 
   def _render_gantt(self, gantt_data):
     """
-    Build and inject the full Gantt HTML structure, then hand data to JS.
+    Build the full Gantt HTML structure and inject it into pnl_gantt_container.
 
-    Structure injected into pnl_gantt_container:
-      #pp-outer
-        #pp-sidebar       (Anvil sidebar components are outside this - see YAML)
-        #pp-gantt-area
-          #pp-col-header  (frozen column headers)
-          #pp-scroll-body
-            #pp-col-data  (column table rows, scrollable)
-            #pp-plot-pane (Plotly div, scrollable)
-      #pp-details         (fixed bottom, Anvil manages content)
+    HTML structure:
+      #pp-shell
+        #pp-main-row
+          #pp-sidebar        (layout/filter controls)
+          #pp-gantt-area
+            #pp-col-header   (timescale header built by JS)
+            #pp-scroll-body
+              #pp-col-data   (frozen column table; sticky header inside)
+              #pp-splitter   (drag handle)
+              #pp-plot-pane
+                #pp-plotly-div
+        #pp-details          (activity details pane)
 
-    Data passed to JS as JSON string to avoid Anvil serialisation issues.
+    Data is embedded as a JS object literal in a <script> tag.
+    The inline script polls for _pp_init and Plotly to be ready before calling.
     """
     raw_tasks     = gantt_data.get('tasks', [])
     columns       = gantt_data.get('columns', [])
@@ -284,103 +307,152 @@ class GanttForm(GanttFormTemplate):
     ts_end        = gantt_data.get('timescale_end', '')
     cols_per_week = gantt_data.get('cols_per_week', 7)
 
-    # Filter BLANK rows - not needed with Plotly
+    # Drop placeholder BLANK rows - not used with Plotly
     tasks = [t for t in raw_tasks if t.get('row_type') != 'BLANK']
-
     if not tasks:
       return
 
     n_rows       = len(tasks)
-    chart_height = n_rows * ROW_HEIGHT
+    chart_height = n_rows * ROW_HEIGHT + 2   # +2 avoids sub-pixel gaps
 
-    # Load / initialise collapse state
+    # Load or initialise WBS collapse state for the current layout
     collapse_state = client_globals.get_collapse_state(self._current_layout_id)
     for task in tasks:
       wbs_id = task.get('wbs_id', '')
-      if wbs_id and task.get('row_type') == 'WBS' and wbs_id not in collapse_state:
-        collapse_state[wbs_id] = True  # default: expanded
+      if (wbs_id and task.get('row_type') == 'WBS'
+          and wbs_id not in collapse_state):
+        collapse_state[wbs_id] = True   # default: expanded
 
-    # Build row metadata (for JS collapse logic)
-    row_meta = self._build_row_meta(tasks)
+    # Build per-row metadata for JS collapse logic
+    row_meta       = self._build_row_meta(tasks)
     self._row_meta = row_meta
 
-    # Build column widths
+    # Column widths: 7px per character-width unit from server
     col_widths = [col.get('width', 10) * 7 for col in columns]
 
-    # Build frozen header HTML
-    header_html = self._build_header_html(columns, col_widths)
+    # Build HTML fragments
+    header_html    = self._build_header_html(columns, col_widths)
+    col_table_html = self._build_col_table_html(
+      tasks, columns, col_widths, collapse_state
+    )
+    sidebar_html   = self._build_sidebar_html()
+    details_html   = self._build_details_html()
 
-    # Build column data table HTML
-    col_table_html = self._build_col_table_html(tasks, columns, col_widths, collapse_state)
-
-    # Build Plotly traces + layout
+    # Build Plotly traces and layout
     traces, layout = self._build_plotly_data(
-      tasks, bar_col_count, ts_start, ts_end, cols_per_week, n_rows, chart_height
+      tasks, bar_col_count, ts_start, ts_end,
+      cols_per_week, n_rows, chart_height
     )
 
-    # Package all JS data as JSON string
+    # Build timescale band data for JS header
+    month_bands, week_ticks = self._build_timescale_bands(
+      ts_start, bar_col_count, cols_per_week
+    )
+
+    # Serialise all JS data to a JSON string (avoids Anvil serialiser issues)
     js_data = json.dumps({
-      'traces':       traces,
-      'layout':       layout,
-      'rowMeta':      row_meta,
+      'traces':        traces,
+      'layout':        layout,
+      'rowMeta':       row_meta,
       'collapseState': collapse_state,
+      'monthBands':    month_bands,
+      'weekTicks':     week_ticks,
+      'barColCount':   bar_col_count,
+      'colsPerWeek':   cols_per_week,
     })
 
-    # Inject HTML shell into Anvil panel
-    container_html = f"""
-<div id="pp-outer" style="display:flex; flex-direction:row; overflow:hidden;">
+    html = f"""
+<div id="pp-shell" style="font-family:Arial,sans-serif; font-size:12px;">
 
-  <div id="pp-gantt-area" style="display:flex; flex-direction:column; flex:1 1 auto; overflow:hidden;">
+  <div id="pp-main-row">
 
-    <!-- Frozen column headers -->
-    <div id="pp-col-header" style="display:flex; flex-direction:row;
-         background:#1565c0; color:white; font-weight:bold;
-         min-height:{COL_HEADER_H}px; flex-shrink:0; overflow:hidden;">
-      {header_html}
+    <!-- Sidebar: layout/filter controls -->
+    <div id="pp-sidebar">
+      {sidebar_html}
     </div>
 
-    <!-- Scrollable body: columns + chart side by side -->
-    <div id="pp-scroll-body" style="display:flex; flex-direction:row;
-         flex:1 1 auto; overflow:hidden;">
+    <!-- Gantt area: timescale header + scrollable body -->
+    <div id="pp-gantt-area">
 
-      <!-- Column data -->
-      <div id="pp-col-data" style="overflow-y:auto; overflow-x:hidden;
-           flex-shrink:0; border-right:2px solid #999999;">
-        {col_table_html}
+      <!-- Timescale header (populated by JS _pp_buildTimescaleHeader) -->
+      <div id="pp-col-header"></div>
+
+      <!-- Scrollable body: column table | splitter | bar chart -->
+      <div id="pp-scroll-body">
+
+        <!-- Column data: sticky header row + data rows -->
+        <div id="pp-col-data">
+          <table id="pp-col-table-header"
+            style="border-collapse:collapse; table-layout:fixed;
+                   font-size:12px; font-family:Arial,sans-serif;
+                   background:#1565c0; position:sticky; top:0; z-index:5; width:100%;">
+            <tbody>
+              <tr style="height:{COL_HEADER_H}px;">{header_html}</tr>
+            </tbody>
+          </table>
+          {col_table_html}
+        </div>
+
+        <!-- Drag handle between columns and bars -->
+        <div id="pp-splitter" title="Drag to resize columns"></div>
+
+        <!-- Plotly bar chart -->
+        <div id="pp-plot-pane">
+          <div id="pp-plotly-div"
+               style="height:{chart_height}px; min-width:600px;"></div>
+        </div>
+
       </div>
-
-      <!-- Plotly chart -->
-      <div id="pp-plot-pane" style="flex:1 1 auto; overflow-y:auto; overflow-x:auto; min-width:200px;">
-        <div id="pp-plotly-div" style="height:{chart_height}px; min-width:600px;"></div>
-      </div>
-
     </div>
   </div>
-</div>
-"""
-    self.pnl_gantt_container.add_component(HtmlTemplate(html=container_html))
 
-    # Fire JS init — data passed as JSON string
-    anvil.js.call_js('_pp_init', self, js_data)
+  <!-- Activity details pane (tabs + content) -->
+  <div id="pp-details">
+    {details_html}
+  </div>
+
+</div>
+
+<script>
+(function() {{
+  // Data embedded as JS object literal to avoid Anvil serialiser issues.
+  // Polls every 100ms until both _pp_init and Plotly are ready.
+  var _ganttData = {js_data};
+  function _tryInit() {{
+    if (typeof _pp_init === 'function' && typeof Plotly !== 'undefined') {{
+      _pp_init(window._prestoplan_form, JSON.stringify(_ganttData));
+    }} else {{
+      setTimeout(_tryInit, 100);
+    }}
+  }}
+  setTimeout(_tryInit, 100);
+}})();
+</script>
+"""
+    anvil.js.window._prestoplan_form = self
+    self.pnl_gantt_container.add_component(HtmlTemplate(html=html))
+
+  # --------------------------------------------------------------------------
+  #  HTML BUILDERS
+  # --------------------------------------------------------------------------
 
   def _build_row_meta(self, tasks):
     """
-    Build per-row metadata list for JS collapse/expand logic.
+    Build per-row metadata list consumed by JS for collapse/expand logic.
 
-    IMPORTANT: For TASK rows, parentWbsId must be the wbs_id of the WBS
-    node the task directly belongs to (not the WBS node's own parent).
-    For WBS rows, parentWbsId is the WBS node's parent WBS node.
+    CRITICAL: For TASK rows, parentWbsId must be the wbs_id of the WBS node
+    the task directly belongs to.  For WBS rows, parentWbsId is the WBS
+    node's own parent WBS id.
     """
     meta = []
     for idx, task in enumerate(tasks):
       row_type = task.get('row_type', 'TASK')
       wbs_id   = task.get('wbs_id', '')
+
       if row_type == 'TASK':
-        # Task's collapse parent is the WBS node it sits under
-        parent_wbs_id = wbs_id
+        parent_wbs_id = wbs_id          # task is child of its own WBS node
       else:
-        # WBS node's collapse parent is its own parent WBS
-        parent_wbs_id = task.get('parent_wbs_id', '')
+        parent_wbs_id = task.get('parent_wbs_id', '')  # WBS node's parent
 
       meta.append({
         'rowIdx':      idx,
@@ -394,36 +466,34 @@ class GanttForm(GanttFormTemplate):
 
   def _build_header_html(self, columns, col_widths):
     """
-    Build the frozen header row HTML.
-    Includes a 24px icon column then one cell per column.
-    Must exactly match the col table column widths.
+    Build sticky header <td> cells for the column table.
+    Must exactly match data row column widths.
     """
-    parts = []
-    # Icon column spacer
-    parts.append(
-      f'<div style="width:24px; min-width:24px; flex-shrink:0; '
-      f'border-right:1px solid #0d47a1;"></div>'
-    )
+    parts = [
+      # Icon column spacer
+      '<td style="width:24px; min-width:24px; '
+      'border-right:1px solid #0d47a1;"></td>'
+    ]
     for i, col in enumerate(columns):
       parts.append(
-        f'<div style="width:{col_widths[i]}px; min-width:{col_widths[i]}px; '
-        f'flex-shrink:0; padding:4px 6px; overflow:hidden; white-space:nowrap; '
-        f'font-size:12px; font-family:Arial,sans-serif; '
-        f'border-right:1px solid #0d47a1; '
-        f'display:flex; align-items:center;">'
-        f'{col.get("label", "")}</div>'
+        f'<td style="width:{col_widths[i]}px; min-width:{col_widths[i]}px; '
+        f'padding:4px 6px; overflow:hidden; white-space:nowrap; '
+        f'color:white; font-weight:bold; font-size:12px; '
+        f'border-right:1px solid #0d47a1; vertical-align:middle;">'
+        f'{col.get("label", "")}</td>'
       )
     return ''.join(parts)
 
   def _build_col_table_html(self, tasks, columns, col_widths, collapse_state):
     """
-    Build the scrollable column data table HTML.
-    Row heights fixed at ROW_HEIGHT px to align with Plotly y-axis.
-    WBS rows: coloured by depth, show ▼/▶ toggle icon.
+    Build the scrollable column data table.
+
+    Row heights are fixed at ROW_HEIGHT px to align with Plotly y-axis.
+    WBS rows: coloured band by depth, collapsible with ▼/▶ icon.
     TASK rows: white background, indented by depth.
     """
-    parts = []
-    total_w = sum(col_widths) + 24
+    parts    = []
+    total_w  = sum(col_widths) + 24   # 24px for icon column
 
     parts.append(
       f'<table id="pp-col-table" style="'
@@ -442,9 +512,9 @@ class GanttForm(GanttFormTemplate):
       parent_wbs_id = task.get('parent_wbs_id', '')
 
       if row_type == 'WBS':
-        bg       = WBS_COLOURS.get(indent, WBS_COLOUR_DEFAULT)
-        expanded = collapse_state.get(wbs_id, True)
-        icon     = '▼' if expanded else '▶'
+        bg        = WBS_COLOURS.get(indent, WBS_COLOUR_DEFAULT)
+        expanded  = collapse_state.get(wbs_id, True)
+        icon      = '▼' if expanded else '▶'
         indent_px = (indent - 1) * 12
 
         parts.append(
@@ -459,8 +529,8 @@ class GanttForm(GanttFormTemplate):
           f'border-bottom:1px solid #ccc; border-right:1px solid #ccc; '
           f'cursor:pointer; padding:0;" '
           f'onclick="_pp_toggleWbs(\'{wbs_id}\')">'
-          f'<span class="pp-wbs-icon" style="font-size:10px; '
-          f'user-select:none;">{icon}</span></td>'
+          f'<span class="pp-wbs-icon" '
+          f'style="font-size:10px; user-select:none;">{icon}</span></td>'
         )
         for i, val in enumerate(row_data):
           pad = (
@@ -483,8 +553,8 @@ class GanttForm(GanttFormTemplate):
         parts.append(
           f'<tr data-row-idx="{idx}" data-task-id="{task_id}" '
           f'data-parent-wbs-id="{wbs_id}" '
-          f'style="height:{ROW_HEIGHT}px; background:white; color:#222; '
-          f'cursor:pointer;" '
+          f'style="height:{ROW_HEIGHT}px; background:white; '
+          f'color:#222; cursor:pointer;" '
           f'onmouseover="this.style.background=\'#fff9c4\'" '
           f'onmouseout="this.style.background=\'white\'">'
         )
@@ -513,16 +583,44 @@ class GanttForm(GanttFormTemplate):
     parts.append('</tbody></table>')
     return ''.join(parts)
 
+  def _build_sidebar_html(self):
+    """
+    Build the sidebar HTML fragment.
+    Anvil components (dropdowns, checkboxes) live in the YAML pnl_details
+    area; this sidebar in the Gantt HTML is just a placeholder that JS sizes.
+    The actual sidebar content is rendered by Anvil's own components which
+    are positioned inside pp-sidebar by _pp_applyLayout.
+
+    Returns empty string - the sidebar div exists for layout purposes only;
+    Anvil's pnl_sidebar ColumnPanel content is separate.
+    """
+    # Layout/filter content is in the YAML sidebar components.
+    # The HTML div #pp-sidebar is sized by JS; Anvil components go elsewhere.
+    return ''
+
+  def _build_details_html(self):
+    """
+    Build the details pane HTML fragment.
+    The actual tab content is managed by Anvil Python (pnl_details).
+    This just returns a placeholder so the div exists for JS layout.
+    """
+    return ''
+
   def _build_plotly_data(self, tasks, bar_col_count, ts_start, ts_end,
                           cols_per_week, n_rows, chart_height):
     """
     Build Plotly traces and layout dict.
 
-    Y-axis: row index 0=top, inverted. Every row (WBS+TASK) has a y-slot
-    so bars align perfectly with the column table.
-    WBS rows get coloured background shapes.
-    Bars: scatter lines (thick). Milestones: diamond markers.
-    Data returned as plain Python dicts — serialised to JSON by caller.
+    Y-axis: 0 = top row, inverted range [n_rows, -1].
+    Every row (WBS and TASK) occupies one y-slot so bars align with the
+    column table.
+
+    WBS rows: coloured background shapes (layer='below').
+    Bar segments: scatter lines (thick, no markers).
+    Milestones: scatter diamond markers.
+    Labels: scatter text markers.
+
+    Returns plain Python dicts - serialised to JSON by _render_gantt.
     """
     from datetime import date, timedelta
 
@@ -530,14 +628,6 @@ class GanttForm(GanttFormTemplate):
       ts_s = date.fromisoformat(ts_start)
     except (ValueError, AttributeError):
       ts_s = date.today()
-
-    # Weekly tick marks
-    tick_vals, tick_texts = [], []
-    for day_off in range(0, bar_col_count, 7):
-      col = int(day_off * cols_per_week / 7)
-      d   = ts_s + timedelta(days=day_off)
-      tick_vals.append(col)
-      tick_texts.append(d.strftime('%d %b %y'))
 
     # WBS background shapes
     shapes = []
@@ -553,7 +643,7 @@ class GanttForm(GanttFormTemplate):
           'line': {'width': 0}, 'layer': 'below',
         })
 
-    # Accumulate segments by colour
+    # Accumulate bar segments by colour code
     bar_data = {c: {'x': [], 'y': [], 'text': [], 'customdata': []}
                 for c in BAR_COLOURS}
     ms_data  = {c: {'x': [], 'y': [], 'text': [], 'customdata': []}
@@ -588,11 +678,13 @@ class GanttForm(GanttFormTemplate):
           bar_data[stype]['text'].extend([task_id, task_id, ''])
           bar_data[stype]['customdata'].extend([task_id, task_id, ''])
 
-    # Build traces
+    # Build traces list
     traces = []
     colour_names = {
-      '1': 'Actual', '2': 'Remaining',
-      '3': 'Near Critical', '4': 'Critical',
+      '1': 'Actual',
+      '2': 'Remaining',
+      '3': 'Near Critical',
+      '4': 'Critical',
     }
     for code, colour in BAR_COLOURS.items():
       d = bar_data[code]
@@ -608,8 +700,10 @@ class GanttForm(GanttFormTemplate):
       })
 
     ms_names = {
-      'M1': 'Actual Milestone', 'M2': 'Milestone',
-      'M3': 'Near-Critical Milestone', 'M4': 'Critical Milestone',
+      'M1': 'Actual Milestone',
+      'M2': 'Milestone',
+      'M3': 'Near-Critical Milestone',
+      'M4': 'Critical Milestone',
     }
     for code, colour in MILESTONE_COLOURS.items():
       d = ms_data[code]
@@ -636,25 +730,96 @@ class GanttForm(GanttFormTemplate):
 
     layout = {
       'height': chart_height,
-      'margin': {'l': 4, 'r': 20, 't': 0, 'b': 40},
+      'margin': {'l': 0, 'r': 20, 't': 0, 'b': 0},
       'xaxis': {
-        'range': [0, bar_col_count],
-        'tickvals': tick_vals, 'ticktext': tick_texts,
-        'showgrid': True, 'gridcolor': '#eeeeee',
-        'zeroline': False, 'fixedrange': False, 'side': 'top',
+        'range':          [0, bar_col_count],
+        'showticklabels': False,   # timescale header is our own HTML
+        'showgrid':       True,
+        'gridcolor':      '#eeeeee',
+        'zeroline':       False,
+        'fixedrange':     False,
       },
       'yaxis': {
-        'range': [n_rows, -1],
-        'showticklabels': False, 'showgrid': False,
-        'zeroline': False, 'fixedrange': False, 'dtick': 1,
+        'range':          [n_rows, -1],
+        'showticklabels': False,
+        'showgrid':       True,
+        'gridcolor':      '#eeeeee',
+        'zeroline':       False,
+        'fixedrange':     False,
+        'dtick':          1,
+        'tick0':          0,
       },
-      'shapes': shapes,
-      'showlegend': False,
-      'plot_bgcolor': 'white', 'paper_bgcolor': 'white',
-      'hovermode': 'closest', 'clickmode': 'event',
+      'shapes':          shapes,
+      'showlegend':      False,
+      'plot_bgcolor':    'white',
+      'paper_bgcolor':   'white',
+      'hovermode':       'closest',
+      'clickmode':       'event',
     }
 
     return traces, layout
+
+  def _build_timescale_bands(self, ts_start, bar_col_count, cols_per_week):
+    """
+    Build month band and week tick data for the JS timescale header.
+
+    Month bands: one entry per calendar month spanning the timescale.
+    Week ticks:  one entry per Monday (every 7 days from ts_start).
+
+    Returns:
+      month_bands : list of {label, startCol, endCol}
+      week_ticks  : list of {label, col}
+    """
+    from datetime import date, timedelta
+
+    try:
+      ts_s = date.fromisoformat(ts_start)
+    except (ValueError, AttributeError):
+      ts_s = date.today()
+
+    cpw      = cols_per_week / 7.0
+    end_col  = bar_col_count
+
+    # Week ticks - every 7 days
+    week_ticks = []
+    day_off    = 0
+    d          = ts_s
+    while True:
+      col = int(day_off * cpw)
+      if col >= end_col:
+        break
+      week_ticks.append({'label': d.strftime('%d'), 'col': col})
+      d       += timedelta(days=7)
+      day_off += 7
+
+    # Month bands - first day of each month within range
+    month_bands = []
+    cur         = date(ts_s.year, ts_s.month, 1)
+    end_date    = ts_s + timedelta(days=int(end_col / cpw) + 31)
+
+    while cur <= end_date:
+      start_off = (cur - ts_s).days
+      start_col = max(0, int(start_off * cpw))
+      if start_col >= end_col:
+        break
+
+      # Next month boundary
+      if cur.month == 12:
+        nxt = date(cur.year + 1, 1, 1)
+      else:
+        nxt = date(cur.year, cur.month + 1, 1)
+
+      end_off  = (nxt - ts_s).days
+      end_band = min(end_col, int(end_off * cpw))
+
+      month_bands.append({
+        'label':    cur.strftime('%b %Y'),
+        'startCol': start_col,
+        'endCol':   end_band,
+      })
+      cur = nxt
+
+    return month_bands, week_ticks
 
   # ==========================================================================
   #  CALLBACKS FROM JS
@@ -662,54 +827,57 @@ class GanttForm(GanttFormTemplate):
 
   def _on_gantt_click(self, point_data):
     """
-    Called from JS when a Plotly bar or milestone is clicked.
-    task_id comes from customdata field.
-    Populates activity details pane from detail_cache (no server call).
+    Called from JS when user clicks a bar or milestone in the Plotly chart.
+    task_id is passed in point_data['text'] (from customdata field).
+    Populates activity details from detail_cache without a server call.
     """
     try:
       task_id = str(point_data.get('text', '')).strip()
-      if not task_id or task_id in ('', 'None', 'undefined'):
+      if not task_id or task_id in ('', 'None', 'undefined', 'null'):
         return
+
+      # Normalise key type (cache keys may be int or str)
       if task_id not in self._detail_cache:
-        return
+        task_id = next(
+          (k for k in self._detail_cache if str(k) == task_id), None
+        )
+        if not task_id:
+          return
 
       self._selected_task_id = task_id
 
-      # Find task row_data for header labels
+      # Update header labels from gantt_data row_data
       if self._gantt_data:
         for t in self._gantt_data.get('tasks', []):
           if (str(t.get('task_id', '')) == task_id
               and t.get('row_type') == 'TASK'):
             row_data = t.get('row_data', [])
-            self.lbl_activity_id.text = (
-              str(row_data[0]) if row_data else ''
-            )
+            self.lbl_activity_id.text   = str(row_data[0]) if row_data else ''
             self.lbl_activity_name.text = (
               str(row_data[1]) if len(row_data) > 1 else ''
             )
             break
 
-      # Show details pane if hidden
+      # Show details pane if currently hidden
       if not self._details_visible:
         self._details_visible    = True
         self.pnl_details.visible = True
         self.btn_toggle_details.text = 'Hide Details'
         anvil.js.call_js('_pp_toggleDetails', True)
 
-      # Highlight active tab and render content
       self._show_details_tab(self._active_tab)
 
     except Exception as e:
       print(f'[_on_gantt_click] ERROR: {e}')
 
   def _on_collapse_change(self, wbs_id, expanded):
-    """Save WBS collapse state when a node is toggled."""
+    """Save WBS collapse state when a node is toggled by JS."""
     client_globals.set_collapse_state(
       self._current_layout_id, wbs_id, expanded
     )
 
   def _on_collapse_all(self, expanded):
-    """Save collapse state for all WBS nodes on Ctrl+/Ctrl-."""
+    """Save collapse state for all WBS nodes (Ctrl+= or Ctrl+-)."""
     if not self._gantt_data:
       return
     for task in self._gantt_data.get('tasks', []):
@@ -793,7 +961,7 @@ class GanttForm(GanttFormTemplate):
     self._show_details_tab('udfs')
 
   def _show_details_tab(self, tab_name):
-    """Switch active tab — solid background on active, grey on inactive."""
+    """Switch active tab - highlights active button, renders content."""
     self._active_tab = tab_name
     all_tabs = {
       'general':       self.tab_general,
@@ -815,7 +983,7 @@ class GanttForm(GanttFormTemplate):
     self._render_details_tab(tab_name)
 
   def _render_details_tab(self, tab_name):
-    """Render selected tab content from detail_cache."""
+    """Render selected tab content from detail_cache (no server call)."""
     self.pnl_details_content.clear()
 
     if not self._selected_task_id:
@@ -840,7 +1008,7 @@ class GanttForm(GanttFormTemplate):
       self._render_udfs_tab(cache.get('udfs', []))
 
   def _add_detail_row(self, label, value):
-    """Add a label + value pair to the details content panel."""
+    """Add a label + value pair row to the details content panel."""
     row = FlowPanel()
     row.add_component(Label(text=f'{label}:', bold=True, width=180))
     row.add_component(Label(text=str(value) if value is not None else ''))
@@ -885,7 +1053,7 @@ class GanttForm(GanttFormTemplate):
 
   def _render_relationships_tab(self, rels):
     preds = rels.get('predecessors', [])
-    succs = rels.get('successors', [])
+    succs = rels.get('successors',   [])
 
     self.pnl_details_content.add_component(
       Label(text='Predecessors', bold=True, font_size=12)
@@ -896,7 +1064,7 @@ class GanttForm(GanttFormTemplate):
         driving = ' ★' if r.get('driving') else ''
         self._add_detail_row(
           r.get('task_code', ''),
-          f'{r.get("rel_type","")} {lag}{driving}  {r.get("task_name","")}'
+          f'{r.get("rel_type", "")} {lag}{driving}  {r.get("task_name", "")}'
         )
     else:
       self.pnl_details_content.add_component(Label(text='  None'))
@@ -910,7 +1078,7 @@ class GanttForm(GanttFormTemplate):
         driving = ' ★' if r.get('driving') else ''
         self._add_detail_row(
           r.get('task_code', ''),
-          f'{r.get("rel_type","")} {lag}{driving}  {r.get("task_name","")}'
+          f'{r.get("rel_type", "")} {lag}{driving}  {r.get("task_name", "")}'
         )
     else:
       self.pnl_details_content.add_component(Label(text='  None'))
@@ -953,6 +1121,6 @@ class GanttForm(GanttFormTemplate):
       if token:
         anvil.server.call('logout', token)
     except Exception:
-      pass
+      pass    # don't block logout if server call fails
     client_globals.clear_session()
     open_form('LoginForm')

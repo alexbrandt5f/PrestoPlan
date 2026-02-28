@@ -1,51 +1,46 @@
 components:
 - components:
-
   - components:
-    - name: btn_toggle_sidebar
-      properties: {text: '◀', bold: true}
+    - event_bindings: {}
+      name: btn_toggle_sidebar
+      properties: {bold: true, text: ◀}
       type: Button
-      event_bindings: {}
     - name: lbl_project
       properties: {bold: true, foreground: '#1565c0', text: No project selected}
       type: Label
     - name: lbl_import
       properties: {foreground: '#555555', text: ''}
       type: Label
-    - name: btn_select_project
+    - event_bindings: {}
+      name: btn_select_project
       properties: {text: Change Project}
       type: Button
-      event_bindings: {}
-    - name: btn_toggle_details
+    - event_bindings: {}
+      name: btn_toggle_details
       properties: {text: Hide Details}
       type: Button
-      event_bindings: {}
     name: pnl_toolbar
     properties: {}
     type: FlowPanel
-
   - name: pnl_gantt_container
     properties: {}
     type: ColumnPanel
-
   layout_properties: {slot: default}
   name: content_panel
   properties: {}
   type: ColumnPanel
-
 - components:
   - name: lbl_nav_user
     properties: {text: ''}
     type: Label
-  - name: btn_logout
+  - event_bindings: {}
+    name: btn_logout
     properties: {text: Log Out}
     type: Button
-    event_bindings: {}
   layout_properties: {slot: nav-right}
   name: navbar_links
   properties: {}
   type: FlowPanel
-
 container:
   properties: {html: '@theme:standard-page.html'}
   type: HtmlTemplate

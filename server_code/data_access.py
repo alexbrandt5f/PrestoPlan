@@ -910,27 +910,46 @@ def get_gantt_data(token, project_id, import_id,
     udf_detail_map  = _get_udf_detail_map(conn, import_id)
     task_detail_map = _get_task_detail_map(conn, import_id, cal_map)
 
+    def _safe(val):
+      """
+      Recursively convert a value to plain Python types safe for Anvil
+      serialisation. Converts date/datetime to ISO string, None to '',
+      all other scalars to str if not already int/float/bool.
+      """
+      from datetime import date, datetime
+      if val is None:
+        return ''
+      if isinstance(val, (datetime, date)):
+        return val.isoformat()
+      if isinstance(val, dict):
+        return {str(k): _safe(v) for k, v in val.items()}
+      if isinstance(val, (list, tuple)):
+        return [_safe(i) for i in val]
+      if isinstance(val, (int, float, bool)):
+        return val
+      return str(val)
+
     detail_cache = {}
     for tid, task in task_lookup.items():
-      detail_cache[tid] = {
-        "general":       task_detail_map.get(tid, {}),
-        "relationships": rel_map.get(tid, {"predecessors": [], "successors": []}),
-        "codes":         code_detail_map.get(tid, []),
-        "notebook":      nb_map.get(tid, []),
-        "udfs":          udf_detail_map.get(tid, []),
+      detail_cache[str(tid)] = {
+        "general":       _safe(task_detail_map.get(tid, {})),
+        "relationships": _safe(rel_map.get(tid, {"predecessors": [], "successors": []})),
+        "codes":         _safe(code_detail_map.get(tid, [])),
+        "notebook":      _safe(nb_map.get(tid, [])),
+        "udfs":          _safe(udf_detail_map.get(tid, [])),
       }
 
     # -- Build task list for client --
     tasks_out = []
     for idx, tid in enumerate(task_ids):
       tasks_out.append({
-        "task_id":       tid,
+        "task_id":       str(tid),
         "row_type":      row_types[idx],
         "indent":        indent_levels[idx],
-        "row_data":      row_data_list[idx],
+        "row_data":      [_safe(v) for v in row_data_list[idx]],
         "bar_segments":  bar_segments[idx],
-        "wbs_id":        task_ids_wbs[idx],
-        "parent_wbs_id": parent_wbs_ids[idx],
+        "wbs_id":        str(task_ids_wbs[idx]),
+        "parent_wbs_id": str(parent_wbs_ids[idx]),
       })
 
     return {

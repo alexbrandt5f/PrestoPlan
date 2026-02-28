@@ -42,177 +42,359 @@ name: PrestoPlan
 native_deps:
   head_html: |-
     <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
-
     <script>
       // ===========================================================================
       //  PrestoPlan Gantt - JavaScript layer
       //
-      //  Constants (tune these without touching logic):
-      //    PP_COLLAPSE_MS   : animation duration in ms (0 = instant)
-      //    PP_TOOLBAR_H     : height of top toolbar in px
-      //    PP_DETAILS_H     : height of bottom details pane in px
-      //    PP_HEADER_H      : height of frozen column header row in px
-      //    PP_ROW_H         : height of each Gantt row in px
-      //    PP_SIDEBAR_W     : width of sidebar when visible in px
+      //  Tunable constants:
+      //    PP_NAV_H       : Anvil nav bar height px
+      //    PP_DETAILS_H   : Details pane height px
+      //    PP_HEADER_H    : Frozen header height px (month row + week row)
+      //    PP_ROW_H       : Gantt row height px
+      //    PP_SIDEBAR_W   : Sidebar width when open px
+      //    PP_COLLAPSE_MS : Collapse animation duration ms (0 = instant)
+      //    PP_COL_MIN_W   : Minimum column table width px
+      //    PP_SPLIT_W     : Splitter handle width px
       // ===========================================================================
 
-      var PP_COLLAPSE_MS = 200;
-      var PP_TOOLBAR_H   = 56;
+      var PP_NAV_H       = 56;
       var PP_DETAILS_H   = 220;
-      var PP_HEADER_H    = 48;
+      var PP_HEADER_H    = 48;   // 24px month row + 24px week row
       var PP_ROW_H       = 24;
       var PP_SIDEBAR_W   = 220;
+      var PP_COLLAPSE_MS = 200;
+      var PP_COL_MIN_W   = 120;
+      var PP_SPLIT_W     = 6;
 
       var _pp = {
-        form:          null,
-        traces:        [],
-        layout:        {},
-        rowMeta:       [],
-        collapseState: {},
-        totalRows:     0,
+        form:           null,
+        traces:         [],
+        layout:         {},
+        rowMeta:        [],
+        collapseState:  {},
+        totalRows:      0,
         detailsVisible: true,
-        sidebarVisible: true,
+        sidebarVisible: false,    // hidden by default - opened with hamburger
+        monthBands:     [],       // [{label, startCol, endCol}]
+        weekTicks:      [],       // [{label, col}]
+        barColCount:    0,
+        colsPerWeek:    7,
       };
 
 
       // ---------------------------------------------------------------------------
-      //  ENTRY POINT — called from Python after HTML is injected
+      //  ENTRY POINT
       // ---------------------------------------------------------------------------
       window._pp_init = function(form, jsonData) {
-        var data = JSON.parse(jsonData);
-
+        var data          = JSON.parse(jsonData);
         _pp.form          = form;
         _pp.traces        = data.traces;
         _pp.layout        = data.layout;
         _pp.rowMeta       = data.rowMeta;
         _pp.collapseState = data.collapseState;
         _pp.totalRows     = data.rowMeta.length;
+        _pp.detailsVisible = true;
+        _pp.sidebarVisible = false;
+        _pp.monthBands    = data.monthBands  || [];
+        _pp.weekTicks     = data.weekTicks   || [];
+        _pp.barColCount   = data.barColCount || 0;
+        _pp.colsPerWeek   = data.colsPerWeek || 7;
 
         _pp_applyLayout();
         _pp_renderPlotly();
+        _pp_buildTimescaleHeader();
         _pp_applyCollapseState(false);
         _pp_setupScrollSync();
+        _pp_setupSplitter();
         _pp_setupKeyboard();
-        _pp_setupResize();
+        window.addEventListener('resize', function() { _pp_applyLayout(); _pp_rebuildTimescaleHeader(); });
       };
 
 
       // ---------------------------------------------------------------------------
-      //  LAYOUT — calculate and apply heights/widths based on window size
+      //  LAYOUT ENGINE
+      //  All sizing is driven from fixed constants so every element fits exactly.
+      //  Called on init, window resize, sidebar toggle, and details toggle.
       // ---------------------------------------------------------------------------
       function _pp_applyLayout() {
-        var winH        = window.innerHeight;
-        var winW        = window.innerWidth;
-        var detailsH    = _pp.detailsVisible ? PP_DETAILS_H : 0;
-        var sidebarW    = _pp.sidebarVisible ? PP_SIDEBAR_W : 0;
-        var ganttH      = winH - PP_TOOLBAR_H - detailsH - PP_HEADER_H;
-        var ganttW      = winW - sidebarW;
+        var winH   = window.innerHeight;
+        var detH   = _pp.detailsVisible ? PP_DETAILS_H : 0;
+        var sidW   = _pp.sidebarVisible ? PP_SIDEBAR_W : 0;
+        var totalH = winH - PP_NAV_H;
+        var bodyH  = totalH - PP_HEADER_H - detH;
 
-        // Outer wrapper
-        var wrapper = document.getElementById('pp-outer');
-        if (wrapper) {
-          wrapper.style.position = 'fixed';
-          wrapper.style.top      = PP_TOOLBAR_H + 'px';
-          wrapper.style.left     = '0';
-          wrapper.style.right    = '0';
-          wrapper.style.bottom   = detailsH + 'px';
-          wrapper.style.display  = 'flex';
-          wrapper.style.flexDirection = 'row';
-          wrapper.style.overflow = 'hidden';
-        }
+        // Shell: fixed below nav bar, fills to bottom of viewport
+        _pp_style('pp-shell', {
+          position:      'fixed',
+          top:           PP_NAV_H + 'px',
+          left:          '0',
+          right:         '0',
+          bottom:        '0',
+          display:       'flex',
+          flexDirection: 'column',
+          overflow:      'hidden',
+          zIndex:        '10',
+          background:    'white',
+        });
+
+        // Main row: sidebar + gantt area side by side
+        _pp_style('pp-main-row', {
+          display:       'flex',
+          flexDirection: 'row',
+          flex:          '1 1 auto',
+          height:        (totalH - detH) + 'px',
+          overflow:      'hidden',
+        });
 
         // Sidebar
         var sidebar = document.getElementById('pp-sidebar');
         if (sidebar) {
-          sidebar.style.width    = sidebarW + 'px';
-          sidebar.style.minWidth = sidebarW + 'px';
-          sidebar.style.overflow = 'auto';
-          sidebar.style.display  = sidebarW === 0 ? 'none' : 'block';
-          sidebar.style.borderRight = '2px solid #cccccc';
-          sidebar.style.background  = '#fafafa';
-          sidebar.style.padding     = '8px';
-          sidebar.style.boxSizing   = 'border-box';
+          sidebar.style.width        = sidW + 'px';
+          sidebar.style.minWidth     = sidW + 'px';
+          sidebar.style.maxWidth     = sidW + 'px';
+          sidebar.style.display      = sidW === 0 ? 'none' : 'flex';
+          sidebar.style.flexDirection = 'column';
+          sidebar.style.overflowY    = 'auto';
+          sidebar.style.overflowX    = 'hidden';
+          sidebar.style.borderRight  = '2px solid #cccccc';
+          sidebar.style.background   = '#fafafa';
+          sidebar.style.padding      = '8px';
+          sidebar.style.boxSizing    = 'border-box';
+          sidebar.style.flexShrink   = '0';
         }
 
-        // Gantt area (header + scroll body)
-        var ganttArea = document.getElementById('pp-gantt-area');
-        if (ganttArea) {
-          ganttArea.style.flex      = '1 1 auto';
-          ganttArea.style.display   = 'flex';
-          ganttArea.style.flexDirection = 'column';
-          ganttArea.style.overflow  = 'hidden';
-          ganttArea.style.width     = ganttW + 'px';
-        }
+        // Gantt area: frozen header + scroll body stacked vertically
+        _pp_style('pp-gantt-area', {
+          display:       'flex',
+          flexDirection: 'column',
+          flex:          '1 1 auto',
+          overflow:      'hidden',
+          minWidth:      '0',
+        });
 
-        // Frozen header row
-        var header = document.getElementById('pp-col-header');
-        if (header) {
-          header.style.height    = PP_HEADER_H + 'px';
-          header.style.minHeight = PP_HEADER_H + 'px';
-          header.style.overflow  = 'hidden';
-          header.style.flexShrink = '0';
-          header.style.display   = 'flex';
-          header.style.flexDirection = 'row';
-          header.style.borderBottom = '2px solid #999';
-          header.style.background   = '#1565c0';
-        }
+        // Timescale header strip (built by _pp_buildTimescaleHeader)
+        _pp_style('pp-col-header', {
+          display:      'flex',
+          flexDirection: 'row',
+          height:       PP_HEADER_H + 'px',
+          minHeight:    PP_HEADER_H + 'px',
+          flexShrink:   '0',
+          overflow:     'hidden',
+          borderBottom: '2px solid #999',
+          background:   '#1565c0',
+        });
 
-        // Scroll body (cols + bars side by side)
-        var body = document.getElementById('pp-scroll-body');
-        if (body) {
-          body.style.flex       = '1 1 auto';
-          body.style.display    = 'flex';
-          body.style.flexDirection = 'row';
-          body.style.overflow   = 'hidden';
-          body.style.height     = ganttH + 'px';
-        }
+        // Scroll body: col table + splitter + plot pane
+        _pp_style('pp-scroll-body', {
+          display:       'flex',
+          flexDirection: 'row',
+          flex:          '1 1 auto',
+          height:        bodyH + 'px',
+          overflow:      'hidden',
+        });
 
-        // Column data scroll pane
-        var colPane = document.getElementById('pp-col-data');
-        if (colPane) {
-          colPane.style.overflowY   = 'auto';
-          colPane.style.overflowX   = 'hidden';
-          colPane.style.flexShrink  = '0';
-          colPane.style.borderRight = '2px solid #999';
-        }
+        // Column data pane (table rows)
+        _pp_style('pp-col-data', {
+          overflowY:  'auto',
+          overflowX:  'hidden',
+          flexShrink: '0',
+          background: 'white',
+        });
 
-        // Plotly scroll pane
-        var plotPane = document.getElementById('pp-plot-pane');
-        if (plotPane) {
-          plotPane.style.flex      = '1 1 auto';
-          plotPane.style.overflowY = 'auto';
-          plotPane.style.overflowX = 'auto';
-          plotPane.style.minWidth  = '200px';
-        }
+        // Splitter handle
+        _pp_style('pp-splitter', {
+          width:      PP_SPLIT_W + 'px',
+          minWidth:   PP_SPLIT_W + 'px',
+          background: '#bdbdbd',
+          cursor:     'col-resize',
+          flexShrink: '0',
+          zIndex:     '5',
+        });
 
-        // Details pane
-        var details = document.getElementById('pp-details');
-        if (details) {
-          details.style.position = 'fixed';
-          details.style.bottom   = '0';
-          details.style.left     = '0';
-          details.style.right    = '0';
-          details.style.height   = PP_DETAILS_H + 'px';
-          details.style.display  = _pp.detailsVisible ? 'block' : 'none';
-          details.style.zIndex   = '100';
-          details.style.background = '#f9f9f9';
-          details.style.borderTop  = '2px solid #cccccc';
-          details.style.overflow   = 'auto';
-        }
+        // Plot pane (Plotly div scrolls inside here)
+        _pp_style('pp-plot-pane', {
+          flex:       '1 1 auto',
+          overflowY:  'auto',
+          overflowX:  'auto',
+          minWidth:   '0',
+        });
 
-        // Resize Plotly
-        var plotDiv = document.getElementById('pp-plotly-div');
-        if (plotDiv && plotDiv.data) {
-          Plotly.relayout(plotDiv, {
-            height: Math.max(100, _pp.totalRows * PP_ROW_H)
-          });
+        // Details pane (fixed height at bottom of shell)
+        var det = document.getElementById('pp-details');
+        if (det) {
+          det.style.height        = PP_DETAILS_H + 'px';
+          det.style.minHeight     = PP_DETAILS_H + 'px';
+          det.style.maxHeight     = PP_DETAILS_H + 'px';
+          det.style.flexShrink    = '0';
+          det.style.display       = _pp.detailsVisible ? 'flex' : 'none';
+          det.style.flexDirection = 'column';
+          det.style.overflowY     = 'hidden';
+          det.style.background    = '#f9f9f9';
+          det.style.borderTop     = '2px solid #cccccc';
         }
       }
 
-      function _pp_setupResize() {
-        window.addEventListener('resize', function() {
-          _pp_applyLayout();
+      function _pp_style(id, styles) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        Object.keys(styles).forEach(function(k) { el.style[k] = styles[k]; });
+      }
+
+
+      // ---------------------------------------------------------------------------
+      //  TIMESCALE HEADER
+      //  Two rows above the bar chart, scrolling horizontally with the plot pane:
+      //    Row 1 (24px): Month bands  e.g. "Mar 2026"
+      //    Row 2 (24px): Week dates   e.g. "01", "08", "15"
+      //  Left spacer width matches column table + splitter so dates line up with bars.
+      // ---------------------------------------------------------------------------
+      function _pp_buildTimescaleHeader() {
+        var header = document.getElementById('pp-col-header');
+        if (!header) return;
+
+        var colData = document.getElementById('pp-col-data');
+        var colW    = colData ? colData.offsetWidth : 0;
+        var spacerW = colW + PP_SPLIT_W;
+
+        // Left spacer (same blue as header, no content)
+        var leftDiv = document.createElement('div');
+        leftDiv.id  = 'pp-header-left';
+        leftDiv.style.cssText = [
+          'width:'     + spacerW + 'px',
+          'min-width:' + spacerW + 'px',
+          'flex-shrink:0',
+          'border-right:2px solid #0d47a1',
+          'background:#1565c0',
+        ].join(';');
+
+        // Right side: scrollable timescale, two rows
+        var rightDiv = document.createElement('div');
+        rightDiv.id  = 'pp-header-right';
+        rightDiv.style.cssText = [
+          'flex:1 1 auto',
+          'overflow:hidden',
+          'display:flex',
+          'flex-direction:column',
+          'background:#1565c0',
+        ].join(';');
+
+        // Month row
+        var monthRow = document.createElement('div');
+        monthRow.id  = 'pp-header-months';
+        monthRow.style.cssText = [
+          'display:flex',
+          'flex-direction:row',
+          'height:24px',
+          'min-height:24px',
+          'overflow:hidden',
+          'border-bottom:1px solid #0d47a1',
+        ].join(';');
+
+        // Week row
+        var weekRow = document.createElement('div');
+        weekRow.id  = 'pp-header-weeks';
+        weekRow.style.cssText = [
+          'display:flex',
+          'flex-direction:row',
+          'height:24px',
+          'min-height:24px',
+          'overflow:hidden',
+        ].join(';');
+
+        // Calculate px per column unit
+        var plotPane = document.getElementById('pp-plot-pane');
+        var plotW    = plotPane ? plotPane.offsetWidth : 800;
+        var pxPerCol = _pp.barColCount > 0 ? plotW / _pp.barColCount : 1;
+
+        // Build month cells
+        _pp.monthBands.forEach(function(band) {
+          var w    = Math.round((band.endCol - band.startCol) * pxPerCol);
+          var cell = document.createElement('div');
+          cell.style.cssText = [
+            'width:'        + w + 'px',
+            'min-width:'    + w + 'px',
+            'overflow:hidden',
+            'white-space:nowrap',
+            'padding:3px 4px',
+            'font-size:11px',
+            'font-weight:bold',
+            'color:white',
+            'font-family:Arial,sans-serif',
+            'border-right:1px solid #0d47a1',
+            'box-sizing:border-box',
+          ].join(';');
+          cell.textContent = band.label;
+          monthRow.appendChild(cell);
         });
+
+        // Build week cells
+        for (var i = 0; i < _pp.weekTicks.length; i++) {
+          var tick    = _pp.weekTicks[i];
+          var nextCol = (i + 1 < _pp.weekTicks.length)
+            ? _pp.weekTicks[i + 1].col
+            : _pp.barColCount;
+          var w2   = Math.round((nextCol - tick.col) * pxPerCol);
+          var cell2 = document.createElement('div');
+          cell2.style.cssText = [
+            'width:'        + w2 + 'px',
+            'min-width:'    + w2 + 'px',
+            'overflow:hidden',
+            'white-space:nowrap',
+            'padding:3px 4px',
+            'font-size:10px',
+            'color:#bbdefb',
+            'font-family:Arial,sans-serif',
+            'border-right:1px solid #0d47a1',
+            'box-sizing:border-box',
+          ].join(';');
+          cell2.textContent = tick.label;
+          weekRow.appendChild(cell2);
+        }
+
+        rightDiv.appendChild(monthRow);
+        rightDiv.appendChild(weekRow);
+        header.innerHTML = '';
+        header.appendChild(leftDiv);
+        header.appendChild(rightDiv);
+      }
+
+      function _pp_rebuildTimescaleHeader() {
+        // Update spacer width after splitter drag or resize
+        var leftDiv = document.getElementById('pp-header-left');
+        if (leftDiv) {
+          var colData = document.getElementById('pp-col-data');
+          var colW    = colData ? colData.offsetWidth : 0;
+          var spacerW = colW + PP_SPLIT_W;
+          leftDiv.style.width    = spacerW + 'px';
+          leftDiv.style.minWidth = spacerW + 'px';
+        }
+
+        // Recompute cell widths for new plot pane width
+        var plotPane = document.getElementById('pp-plot-pane');
+        var plotW    = plotPane ? plotPane.offsetWidth : 800;
+        var pxPerCol = _pp.barColCount > 0 ? plotW / _pp.barColCount : 1;
+
+        var monthRow = document.getElementById('pp-header-months');
+        if (monthRow) {
+          var cells = monthRow.children;
+          for (var i = 0; i < cells.length && i < _pp.monthBands.length; i++) {
+            var w = Math.round((_pp.monthBands[i].endCol - _pp.monthBands[i].startCol) * pxPerCol);
+            cells[i].style.width    = w + 'px';
+            cells[i].style.minWidth = w + 'px';
+          }
+        }
+
+        var weekRow = document.getElementById('pp-header-weeks');
+        if (weekRow) {
+          var cells2 = weekRow.children;
+          for (var j = 0; j < cells2.length && j < _pp.weekTicks.length; j++) {
+            var nextCol = (j + 1 < _pp.weekTicks.length)
+              ? _pp.weekTicks[j + 1].col : _pp.barColCount;
+            var w2 = Math.round((nextCol - _pp.weekTicks[j].col) * pxPerCol);
+            cells2[j].style.width    = w2 + 'px';
+            cells2[j].style.minWidth = w2 + 'px';
+          }
+        }
       }
 
 
@@ -221,224 +403,278 @@ native_deps:
       // ---------------------------------------------------------------------------
       function _pp_renderPlotly() {
         var div = document.getElementById('pp-plotly-div');
-        if (!div) {
-          setTimeout(_pp_renderPlotly, 300);
-          return;
-        }
+        if (!div) { setTimeout(_pp_renderPlotly, 200); return; }
 
         Plotly.newPlot(div, _pp.traces, _pp.layout, {
-          responsive:     false,
-          displayModeBar: false,
+          responsive: false, displayModeBar: false
         });
 
         div.on('plotly_click', function(data) {
-               if (!data || !data.points || !data.points.length) return;
-               var pt     = data.points[0];
-               var taskId = '';
-               if (pt.customdata) taskId = String(pt.customdata);
-               else if (pt.text)  taskId = String(pt.text);
-               if (!taskId || taskId === 'undefined' || !_pp.form) return;
-               anvil.call(_pp.form, '_on_gantt_click', {x: pt.x, y: pt.y, text: taskId});
-               });
-               }
+          if (!data || !data.points || !data.points.length) return;
+          var pt     = data.points[0];
+          var taskId = String(pt.customdata || pt.text || '').trim();
+          if (!taskId || taskId === 'undefined' || taskId === 'null') return;
+          if (_pp.form) anvil.call(_pp.form, '_on_gantt_click', {text: taskId});
+        });
+      }
 
 
-               // ---------------------------------------------------------------------------
-               //  COLLAPSE STATE
-               // ---------------------------------------------------------------------------
-               function _pp_isRowVisible(idx) {
-               var meta = _pp.rowMeta[idx];
-               if (!meta) return true;
-               var parentId = meta.parentWbsId;
-               while (parentId) {
-               if (_pp.collapseState[parentId] === false) return false;
-               // Find the WBS row that owns parentId to get its parent
-               var found = null;
-               for (var i = 0; i < _pp.rowMeta.length; i++) {
-               if (_pp.rowMeta[i].wbsId === parentId && _pp.rowMeta[i].rowType === 'WBS') {
-               found = _pp.rowMeta[i];
-               break;
-               }
-               }
-               parentId = found ? found.parentWbsId : null;
-               }
-               return true;
-               }
+      // ---------------------------------------------------------------------------
+      //  COLLAPSE LOGIC
+      // ---------------------------------------------------------------------------
+      function _pp_isRowVisible(idx) {
+        var meta = _pp.rowMeta[idx];
+        if (!meta) return true;
+        var pid = meta.parentWbsId;
+        while (pid) {
+          if (_pp.collapseState[pid] === false) return false;
+          var owner = null;
+          for (var i = 0; i < _pp.rowMeta.length; i++) {
+            if (_pp.rowMeta[i].wbsId === pid && _pp.rowMeta[i].rowType === 'WBS') {
+              owner = _pp.rowMeta[i]; break;
+            }
+          }
+          pid = owner ? owner.parentWbsId : null;
+        }
+        return true;
+      }
 
-               function _pp_applyCollapseState(animate) {
-               var table = document.getElementById('pp-col-table');
-               if (!table) return;
+      function _pp_applyCollapseState(animate) {
+        var table = document.getElementById('pp-col-table');
+        if (!table) return;
 
-               var rows = table.querySelectorAll('tr[data-row-idx]');
-               rows.forEach(function(tr) {
-               var idx    = parseInt(tr.getAttribute('data-row-idx'));
-               var meta   = _pp.rowMeta[idx];
-               if (!meta) return;
-               var vis = _pp_isRowVisible(idx);
+        table.querySelectorAll('tr[data-row-idx]').forEach(function(tr) {
+          var idx  = parseInt(tr.getAttribute('data-row-idx'));
+          var meta = _pp.rowMeta[idx];
+          if (!meta) return;
+          var vis = _pp_isRowVisible(idx);
+          var cur = tr.style.display !== 'none';
 
-               if (animate && !vis && tr.style.display !== 'none') {
-               // Collapse animation
-               tr.style.transition = 'opacity ' + PP_COLLAPSE_MS + 'ms ease';
-               tr.style.opacity = '0';
-               setTimeout(function() {
-               tr.style.display = 'none';
-               tr.style.opacity = '';
-               tr.style.transition = '';
-               }, PP_COLLAPSE_MS);
-               } else if (animate && vis && tr.style.display === 'none') {
-               // Expand animation
-               tr.style.display = '';
-               tr.style.opacity = '0';
-               tr.style.transition = 'opacity ' + PP_COLLAPSE_MS + 'ms ease';
-               setTimeout(function() {
-               tr.style.opacity = '1';
-               setTimeout(function() {
-               tr.style.opacity = '';
-               tr.style.transition = '';
-               }, PP_COLLAPSE_MS);
-               }, 10);
-               } else {
-               tr.style.display = vis ? '' : 'none';
-               }
+          if (animate && !vis && cur) {
+            tr.style.transition = 'opacity ' + PP_COLLAPSE_MS + 'ms';
+            tr.style.opacity    = '0';
+            setTimeout(function() {
+              tr.style.display    = 'none';
+              tr.style.opacity    = '';
+              tr.style.transition = '';
+            }, PP_COLLAPSE_MS);
+          } else if (animate && vis && !cur) {
+            tr.style.display    = '';
+            tr.style.opacity    = '0';
+            tr.style.transition = 'opacity ' + PP_COLLAPSE_MS + 'ms';
+            setTimeout(function() {
+              tr.style.opacity    = '1';
+              setTimeout(function() {
+                tr.style.opacity    = '';
+                tr.style.transition = '';
+              }, PP_COLLAPSE_MS);
+            }, 10);
+          } else {
+            tr.style.display = vis ? '' : 'none';
+          }
 
-               // Update toggle icon
-               if (meta.rowType === 'WBS' && meta.wbsId) {
-               var icon = tr.querySelector('.pp-wbs-icon');
-               if (icon) {
-               icon.textContent = (_pp.collapseState[meta.wbsId] !== false) ? '▼' : '▶';
-               }
-               }
-               });
+          if (meta.rowType === 'WBS' && meta.wbsId) {
+            var icon = tr.querySelector('.pp-wbs-icon');
+            if (icon) icon.textContent = (_pp.collapseState[meta.wbsId] !== false) ? '▼' : '▶';
+          }
+        });
 
-               setTimeout(_pp_updatePlotlyVisibility, animate ? PP_COLLAPSE_MS + 50 : 0);
-               }
+        setTimeout(_pp_syncPlotlyToCollapse, animate ? PP_COLLAPSE_MS + 50 : 0);
+      }
 
-               function _pp_updatePlotlyVisibility() {
-               var div = document.getElementById('pp-plotly-div');
-               if (!div) return;
+      function _pp_syncPlotlyToCollapse() {
+        // Build compressed y-index: only visible rows get a new sequential position
+        var newY = {};
+        var yPos = 0;
+        for (var i = 0; i < _pp.rowMeta.length; i++) {
+          if (_pp_isRowVisible(i)) newY[i] = yPos++;
+        }
+        var visCount = yPos;
 
-               // Build visible row set
-               var visible = {};
-               for (var i = 0; i < _pp.rowMeta.length; i++) {
-               if (_pp_isRowVisible(i)) visible[i] = true;
-               }
+        var newTraces = JSON.parse(JSON.stringify(_pp.traces));
+        newTraces.forEach(function(trace) {
+          if (!trace.y) return;
+          var nx = [], ny = [], nt = [], nc = [];
+          for (var i = 0; i < trace.y.length; i++) {
+            var y = trace.y[i];
+            if (y === null || y === undefined) {
+              nx.push(null); ny.push(null);
+              nt.push(trace.text       ? (trace.text[i]       || '') : '');
+              nc.push(trace.customdata ? (trace.customdata[i]  || '') : '');
+            } else {
+              var ri = Math.round(y);
+              if (newY.hasOwnProperty(ri)) {
+                nx.push(trace.x[i]); ny.push(newY[ri]);
+                nt.push(trace.text       ? (trace.text[i]       || '') : '');
+                nc.push(trace.customdata ? (trace.customdata[i]  || '') : '');
+              }
+            }
+          }
+          trace.x = nx; trace.y = ny;
+          if (trace.text)       trace.text       = nt;
+          if (trace.customdata) trace.customdata = nc;
+        });
 
-               // Filter traces
-               var newTraces = JSON.parse(JSON.stringify(_pp.traces));
-               newTraces.forEach(function(trace) {
-               if (!trace.y) return;
-               var nx = [], ny = [], nt = [], nc = [];
-               for (var i = 0; i < trace.y.length; i++) {
-               var y = trace.y[i];
-               if (y === null || y === undefined) {
-               nx.push(null); ny.push(null);
-               nt.push(trace.text ? trace.text[i] : '');
-               nc.push(trace.customdata ? trace.customdata[i] : '');
-               } else {
-               var ri = Math.round(y);
-               if (visible[ri]) {
-               nx.push(trace.x[i]); ny.push(y);
-               nt.push(trace.text ? trace.text[i] : '');
-               nc.push(trace.customdata ? trace.customdata[i] : '');
-               }
-               }
-               }
-               trace.x = nx; trace.y = ny;
-               if (trace.text)       trace.text       = nt;
-               if (trace.customdata) trace.customdata = nc;
-               });
+        // Remap WBS background shapes to compressed positions
+        var newLayout = JSON.parse(JSON.stringify(_pp.layout));
+        if (newLayout.shapes) {
+          newLayout.shapes = newLayout.shapes
+            .filter(function(s) {
+              var ri = Math.round((s.y0 + s.y1) / 2);
+              return newY.hasOwnProperty(ri);
+            })
+            .map(function(s) {
+              var ri  = Math.round((s.y0 + s.y1) / 2);
+              var ny2 = newY[ri];
+              return Object.assign({}, s, {y0: ny2 - 0.5, y1: ny2 + 0.5});
+            });
+        }
 
-               var visCount  = Object.keys(visible).length;
-               var newHeight = Math.max(100, visCount * PP_ROW_H);
-               var newLayout = JSON.parse(JSON.stringify(_pp.layout));
-               newLayout.height      = newHeight;
-               newLayout.yaxis.range = [_pp.totalRows, -1];
+        var newH = Math.max(PP_ROW_H, visCount * PP_ROW_H);
+        newLayout.height      = newH;
+        newLayout.yaxis.range = [visCount, -1];
 
-               if (div.style) div.style.height = newHeight + 'px';
-               Plotly.react(div, newTraces, newLayout, {responsive: false, displayModeBar: false});
-               }
-
-
-               // ---------------------------------------------------------------------------
-               //  WBS TOGGLE
-               // ---------------------------------------------------------------------------
-               window._pp_toggleWbs = function(wbsId) {
-               var cur      = (_pp.collapseState[wbsId] !== false);
-               _pp.collapseState[wbsId] = !cur;
-               _pp_applyCollapseState(PP_COLLAPSE_MS > 0);
-               if (_pp.form) {
-               anvil.call(_pp.form, '_on_collapse_change', wbsId, !cur);
-               }
-               };
-
-               window._pp_expandAll = function() {
-               _pp.rowMeta.forEach(function(m) {
-               if (m.wbsId) _pp.collapseState[m.wbsId] = true;
-               });
-               _pp_applyCollapseState(false);
-               if (_pp.form) anvil.call(_pp.form, '_on_collapse_all', true);
-               };
-
-               window._pp_collapseAll = function() {
-               _pp.rowMeta.forEach(function(m) {
-               if (m.wbsId && m.depth === 1) _pp.collapseState[m.wbsId] = false;
-               });
-               _pp_applyCollapseState(false);
-               if (_pp.form) anvil.call(_pp.form, '_on_collapse_all', false);
-               };
+        var plotDiv = document.getElementById('pp-plotly-div');
+        if (plotDiv) plotDiv.style.height = newH + 'px';
+        Plotly.react(plotDiv, newTraces, newLayout, {responsive: false, displayModeBar: false});
+      }
 
 
-               // ---------------------------------------------------------------------------
-               //  KEYBOARD
-               // ---------------------------------------------------------------------------
-               function _pp_setupKeyboard() {
-               document.addEventListener('keydown', function(e) {
-               if (!e.ctrlKey) return;
-               if (e.key === '=' || e.key === '+') { e.preventDefault(); _pp_expandAll(); }
-               if (e.key === '-')                  { e.preventDefault(); _pp_collapseAll(); }
-               });
-               }
+      // ---------------------------------------------------------------------------
+      //  WBS TOGGLE / EXPAND ALL / COLLAPSE ALL
+      // ---------------------------------------------------------------------------
+      window._pp_toggleWbs = function(wbsId) {
+        var cur = (_pp.collapseState[wbsId] !== false);
+        _pp.collapseState[wbsId] = !cur;
+        _pp_applyCollapseState(PP_COLLAPSE_MS > 0);
+        if (_pp.form) anvil.call(_pp.form, '_on_collapse_change', wbsId, !cur);
+      };
+
+      window._pp_expandAll = function() {
+        _pp.rowMeta.forEach(function(m) { if (m.wbsId) _pp.collapseState[m.wbsId] = true; });
+        _pp_applyCollapseState(false);
+        if (_pp.form) anvil.call(_pp.form, '_on_collapse_all', true);
+      };
+
+      window._pp_collapseAll = function() {
+        _pp.rowMeta.forEach(function(m) {
+          if (m.wbsId && m.depth === 1) _pp.collapseState[m.wbsId] = false;
+        });
+        _pp_applyCollapseState(false);
+        if (_pp.form) anvil.call(_pp.form, '_on_collapse_all', false);
+      };
 
 
-               // ---------------------------------------------------------------------------
-               //  SCROLL SYNC
-               // ---------------------------------------------------------------------------
-               function _pp_setupScrollSync() {
-               var colPane  = document.getElementById('pp-col-data');
-               var plotPane = document.getElementById('pp-plot-pane');
-               if (!colPane || !plotPane) return;
-               var syncing = false;
-               colPane.addEventListener('scroll', function() {
-               if (syncing) return; syncing = true;
-               plotPane.scrollTop = colPane.scrollTop;
-               syncing = false;
-               });
-               plotPane.addEventListener('scroll', function() {
-               if (syncing) return; syncing = true;
-               colPane.scrollTop = plotPane.scrollTop;
-               syncing = false;
-               });
-               }
+      // ---------------------------------------------------------------------------
+      //  KEYBOARD SHORTCUTS
+      //    Ctrl+= or Ctrl++  :  expand all
+      //    Ctrl+-            :  collapse all to level 1
+      // ---------------------------------------------------------------------------
+      function _pp_setupKeyboard() {
+        document.addEventListener('keydown', function(e) {
+          if (!e.ctrlKey) return;
+          if (e.key === '=' || e.key === '+') { e.preventDefault(); _pp_expandAll(); }
+          if (e.key === '-')                  { e.preventDefault(); _pp_collapseAll(); }
+        });
+      }
 
 
-               // ---------------------------------------------------------------------------
-               //  SIDEBAR TOGGLE (called from Python via anvil.js.call_js)
-               // ---------------------------------------------------------------------------
-               window._pp_toggleSidebar = function(visible) {
-               _pp.sidebarVisible = visible;
-               _pp_applyLayout();
-               };
+      // ---------------------------------------------------------------------------
+      //  DRAGGABLE SPLITTER
+      //  User drags the 6px handle between column table and bar chart.
+      //  Updates column table width in real-time; reflows timescale header and
+      //  Plotly on mouseup.
+      // ---------------------------------------------------------------------------
+      function _pp_setupSplitter() {
+        var splitter = document.getElementById('pp-splitter');
+        var colData  = document.getElementById('pp-col-data');
+        if (!splitter || !colData) return;
+
+        var dragging = false;
+        var startX   = 0;
+        var startW   = 0;
+
+        splitter.addEventListener('mousedown', function(e) {
+          dragging = true;
+          startX   = e.clientX;
+          startW   = colData.offsetWidth;
+          document.body.style.cursor     = 'col-resize';
+          document.body.style.userSelect = 'none';
+          e.preventDefault();
+        });
+
+        document.addEventListener('mousemove', function(e) {
+          if (!dragging) return;
+          var newW = Math.max(PP_COL_MIN_W, startW + (e.clientX - startX));
+          colData.style.width    = newW + 'px';
+          colData.style.minWidth = newW + 'px';
+          colData.style.maxWidth = newW + 'px';
+          // Update header spacer live
+          var leftDiv = document.getElementById('pp-header-left');
+          if (leftDiv) {
+            var spacerW = newW + PP_SPLIT_W;
+            leftDiv.style.width    = spacerW + 'px';
+            leftDiv.style.minWidth = spacerW + 'px';
+          }
+        });
+
+        document.addEventListener('mouseup', function() {
+          if (!dragging) return;
+          dragging = false;
+          document.body.style.cursor     = '';
+          document.body.style.userSelect = '';
+          // Resize Plotly to new plot pane width
+          var plotDiv  = document.getElementById('pp-plotly-div');
+          var plotPane = document.getElementById('pp-plot-pane');
+          if (plotDiv && plotPane) {
+            Plotly.relayout(plotDiv, {width: plotPane.offsetWidth});
+          }
+          _pp_rebuildTimescaleHeader();
+        });
+      }
 
 
-               // ---------------------------------------------------------------------------
-               //  DETAILS TOGGLE
-               // ---------------------------------------------------------------------------
-               window._pp_toggleDetails = function(visible) {
-               _pp.detailsVisible = visible;
-               _pp_applyLayout();
-               };
+      // ---------------------------------------------------------------------------
+      //  SCROLL SYNC
+      //  Vertical: col-data <-> plot-pane (rows stay aligned)
+      //  Horizontal: plot-pane scroll -> header-right scroll (timescale tracks bars)
+      // ---------------------------------------------------------------------------
+      function _pp_setupScrollSync() {
+        var colPane  = document.getElementById('pp-col-data');
+        var plotPane = document.getElementById('pp-plot-pane');
+        var hdrRight = document.getElementById('pp-header-right');
+        if (!colPane || !plotPane) return;
 
-               </script>
+        var syncing = false;
+
+        colPane.addEventListener('scroll', function() {
+          if (syncing) return; syncing = true;
+          plotPane.scrollTop = colPane.scrollTop;
+          syncing = false;
+        });
+
+        plotPane.addEventListener('scroll', function() {
+          if (syncing) return; syncing = true;
+          colPane.scrollTop = plotPane.scrollTop;
+          if (hdrRight) hdrRight.scrollLeft = plotPane.scrollLeft;
+          syncing = false;
+        });
+      }
+
+
+      // ---------------------------------------------------------------------------
+      //  SIDEBAR / DETAILS TOGGLES  (called from Python via anvil.js.call_js)
+      // ---------------------------------------------------------------------------
+      window._pp_toggleSidebar = function(visible) {
+        _pp.sidebarVisible = visible;
+        _pp_applyLayout();
+      };
+
+      window._pp_toggleDetails = function(visible) {
+        _pp.detailsVisible = visible;
+        _pp_applyLayout();
+      };
+    </script>
 package_name: PrestoPlan
 renamed: true
 runtime_options:
