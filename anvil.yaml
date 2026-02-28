@@ -130,6 +130,7 @@ native_deps:
           left:          '0',
           right:         '0',
           bottom:        '0',
+          width:         'unset',    // clear any explicit width from previous renders
           display:       'flex',
           flexDirection: 'column',
           overflow:      'hidden',

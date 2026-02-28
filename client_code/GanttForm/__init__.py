@@ -429,6 +429,15 @@ class GanttForm(GanttFormTemplate):
 }})();
 </script>
 """
+    # Remove any stale pp-shell left over from a previous render.
+    # position:fixed elements escape their Anvil container's layout so
+    # pnl_gantt_container.clear() doesn't visually remove them.
+    anvil.js.call_js('eval', '''
+      (function() {
+        var old = document.getElementById("pp-shell");
+        if (old && old.parentElement) old.parentElement.removeChild(old);
+      })();
+    ''')
     anvil.js.window._prestoplan_form = self
     self.pnl_gantt_container.add_component(HtmlTemplate(html=html))
 
@@ -583,7 +592,7 @@ class GanttForm(GanttFormTemplate):
     parts.append('</tbody></table>')
     return ''.join(parts)
 
-  def _build_sidebar_html(self):
+    def _build_sidebar_html(self):
     """
     Build the sidebar HTML fragment.
     Anvil components (dropdowns, checkboxes) live in the YAML pnl_details
@@ -607,7 +616,7 @@ class GanttForm(GanttFormTemplate):
     return ''
 
   def _build_plotly_data(self, tasks, bar_col_count, ts_start, ts_end,
-                         cols_per_week, n_rows, chart_height):
+                          cols_per_week, n_rows, chart_height):
     """
     Build Plotly traces and layout dict.
 
