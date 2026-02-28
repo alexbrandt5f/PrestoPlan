@@ -83,6 +83,20 @@ native_deps:
 
 
       // ---------------------------------------------------------------------------
+      //  CLEANUP - removes stale pp-shell from previous renders
+      //  Called from Python before injecting new HTML.
+      //  position:fixed elements escape their Anvil container so .clear() alone
+      //  doesn't remove them visually.
+      // ---------------------------------------------------------------------------
+      window._pp_cleanup = function() {
+        var old = document.getElementById('pp-shell');
+        if (old && old.parentElement) {
+          old.parentElement.removeChild(old);
+        }
+      };
+
+
+      // ---------------------------------------------------------------------------
       //  ENTRY POINT
       // ---------------------------------------------------------------------------
       window._pp_init = function(form, jsonData) {
@@ -130,12 +144,13 @@ native_deps:
           left:          '0',
           right:         '0',
           bottom:        '0',
-          width:         'unset',    // clear any explicit width from previous renders
+          width:         '100%',    // belt-and-suspenders: right:0 alone can be overridden
           display:       'flex',
           flexDirection: 'column',
           overflow:      'hidden',
           zIndex:        '10',
           background:    'white',
+          boxSizing:     'border-box',
         });
 
         // Main row: sidebar + gantt area side by side
@@ -194,8 +209,14 @@ native_deps:
           overflow:      'hidden',
         });
 
-        // Column data pane (table rows)
+        // Column data pane - width driven by the table inside it, not unbounded
+        var colTable = document.getElementById('pp-col-table');
+        var colW = colTable ? colTable.offsetWidth : 400;
+        if (colW < PP_COL_MIN_W) colW = PP_COL_MIN_W;
         _pp_style('pp-col-data', {
+          width:      colW + 'px',
+          minWidth:   colW + 'px',
+          maxWidth:   colW + 'px',
           overflowY:  'auto',
           overflowX:  'hidden',
           flexShrink: '0',

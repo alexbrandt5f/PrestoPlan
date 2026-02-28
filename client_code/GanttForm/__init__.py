@@ -385,7 +385,7 @@ class GanttForm(GanttFormTemplate):
           <table id="pp-col-table-header"
             style="border-collapse:collapse; table-layout:fixed;
                    font-size:12px; font-family:Arial,sans-serif;
-                   background:#1565c0; position:sticky; top:0; z-index:5; width:100%;">
+                   background:#1565c0; position:sticky; top:0; z-index:5;">
             <tbody>
               <tr style="height:{COL_HEADER_H}px;">{header_html}</tr>
             </tbody>
@@ -432,12 +432,10 @@ class GanttForm(GanttFormTemplate):
     # Remove any stale pp-shell left over from a previous render.
     # position:fixed elements escape their Anvil container's layout so
     # pnl_gantt_container.clear() doesn't visually remove them.
-    anvil.js.call_js('eval', '''
-      (function() {
-        var old = document.getElementById("pp-shell");
-        if (old && old.parentElement) old.parentElement.removeChild(old);
-      })();
-    ''')
+    try:
+      anvil.js.call_js('_pp_cleanup')
+    except Exception:
+      pass   # function not yet defined on first load - that's fine
     anvil.js.window._prestoplan_form = self
     self.pnl_gantt_container.add_component(HtmlTemplate(html=html))
 
@@ -592,7 +590,7 @@ class GanttForm(GanttFormTemplate):
     parts.append('</tbody></table>')
     return ''.join(parts)
 
-    def _build_sidebar_html(self):
+  def _build_sidebar_html(self):
     """
     Build the sidebar HTML fragment.
     Anvil components (dropdowns, checkboxes) live in the YAML pnl_details
