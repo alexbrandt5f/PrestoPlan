@@ -18,7 +18,6 @@ components:
     name: pnl_toolbar
     properties: {}
     type: FlowPanel
-
   - components:
     - components:
       - name: lbl_sidebar_layout
@@ -35,7 +34,7 @@ components:
         type: DropDown
       - event_bindings: {}
         name: btn_toggle_gfs
-        properties: {text: '▶ Grouping / Filtering / Sorting'}
+        properties: {text: ▶ Grouping / Filtering / Sorting}
         type: Button
       - components:
         - name: lbl_filter_status
@@ -86,11 +85,9 @@ components:
       name: pnl_sidebar
       properties: {}
       type: ColumnPanel
-
     - components:
       - name: lbl_no_data
-        properties: {align: center, font_size: 14, foreground: '#888888',
-          text: Select a project and import to view the Gantt chart., visible: true}
+        properties: {align: center, font_size: 14, foreground: '#888888', text: Select a project and import to view the Gantt chart., visible: true}
         type: Label
       - name: pnl_gantt_container
         properties: {}
@@ -101,7 +98,6 @@ components:
     name: pnl_content_row
     properties: {}
     type: FlowPanel
-
   - components:
     - components:
       - name: lbl_details_title
@@ -150,12 +146,10 @@ components:
     name: pnl_details
     properties: {background: '#f9f9f9', border: '1px solid #cccccc'}
     type: ColumnPanel
-
   layout_properties: {slot: default}
   name: content_panel
   properties: {}
   type: ColumnPanel
-
 - components:
   - name: lbl_nav_user
     properties: {text: ''}
@@ -168,7 +162,6 @@ components:
   name: navbar_links
   properties: {}
   type: FlowPanel
-
 container:
   properties: {html: '@theme:standard-page.html'}
   type: HtmlTemplate

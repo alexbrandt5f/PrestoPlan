@@ -39,6 +39,35 @@ db_schema:
     title: Users
 dependencies: []
 name: PrestoPlan
+native_deps:
+  head_html: |-
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+
+    <script>
+      // PrestoPlan - Plotly renderer called from Anvil Python
+      function _prestoplan_render_plotly(traces, layout) {
+        var div = document.getElementById('plotly-div');
+        if (!div) {
+          setTimeout(function() {
+            div = document.getElementById('plotly-div');
+            if (div) Plotly.newPlot(div, traces, layout, {responsive: true});
+          }, 300);
+          return;
+        }
+        Plotly.newPlot(div, traces, layout, {responsive: true});
+
+        // Wire click events back to Python
+        div.on('plotly_click', function(data) {
+          if (!data || !data.points || !data.points.length) return;
+          var pt = data.points[0];
+          anvil.call(window._prestoplan_form, '_on_gantt_click', {
+            x: pt.x,
+            y: pt.y,
+            text: pt.text || (pt.customdata || '')
+          });
+        });
+      }
+    </script>
 package_name: PrestoPlan
 renamed: true
 runtime_options:
