@@ -607,7 +607,7 @@ class GanttForm(GanttFormTemplate):
     return ''
 
   def _build_plotly_data(self, tasks, bar_col_count, ts_start, ts_end,
-                          cols_per_week, n_rows, chart_height):
+                         cols_per_week, n_rows, chart_height):
     """
     Build Plotly traces and layout dict.
 
