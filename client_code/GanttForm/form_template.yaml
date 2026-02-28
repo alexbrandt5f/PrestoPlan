@@ -1,165 +1,33 @@
 components:
 - components:
-  - components:
-    - event_bindings: {}
-      name: btn_toggle_sidebar
-      properties: {bold: false, text: ☰}
-      type: Button
-    - name: lbl_project
-      properties: {bold: true, foreground: '#1565c0', text: No project selected}
-      type: Label
-    - name: lbl_import
-      properties: {foreground: '#555555', text: ''}
-      type: Label
-    - event_bindings: {}
-      name: btn_select_project
-      properties: {text: Change Project}
-      type: Button
-    - event_bindings: {}
-      name: btn_toggle_details
-      properties: {text: Hide Details}
-      type: Button
-    name: pnl_toolbar
-    properties: {}
-    type: FlowPanel
-  - components:
-    - name: lbl_sidebar_layout
-      properties: {bold: true, text: 'Layout:'}
-      type: Label
-    - event_bindings: {}
-      name: dd_layout
-      properties: {placeholder: Default layout}
-      type: DropDown
-    - name: lbl_sidebar_filters
-      properties: {bold: true, text: 'Saved Filters:'}
-      type: Label
-    - event_bindings: {}
-      name: dd_saved_filters
-      properties: {placeholder: No filter applied}
-      type: DropDown
-    - event_bindings: {}
-      name: btn_toggle_gfs
-      properties: {text: ▶ Grouping / Filtering / Sorting}
-      type: Button
-    - components:
-      - name: lbl_filter_status
-        properties: {bold: true, text: Status}
-        type: Label
-      - name: chk_not_started
-        properties: {checked: true, text: Not Started}
-        type: CheckBox
-      - name: chk_in_progress
-        properties: {checked: true, text: In Progress}
-        type: CheckBox
-      - name: chk_complete
-        properties: {checked: true, text: Complete}
-        type: CheckBox
-      - name: lbl_filter_criticality
-        properties: {bold: true, text: Criticality}
-        type: Label
-      - name: chk_critical
-        properties: {checked: true, text: Critical}
-        type: CheckBox
-      - name: chk_near_critical
-        properties: {checked: true, text: Near Critical}
-        type: CheckBox
-      - name: chk_non_critical
-        properties: {checked: true, text: Non Critical}
-        type: CheckBox
-      - name: lbl_filter_actcode
-        properties: {bold: true, text: 'Activity Code:'}
-        type: Label
-      - event_bindings: {}
-        name: dd_actcode_type
-        properties: {placeholder: Select code type...}
-        type: DropDown
-      - name: dd_actcode_value
-        properties: {placeholder: Select value...}
-        type: DropDown
-      - event_bindings: {}
-        name: btn_apply_filters
-        properties: {role: primary-color, text: Apply Filters}
-        type: Button
-      - event_bindings: {}
-        name: btn_clear_filters
-        properties: {text: Clear Filters}
-        type: Button
-      name: pnl_gfs
-      properties: {visible: false}
-      type: ColumnPanel
-    name: pnl_sidebar
-    properties: {}
-    type: ColumnPanel
+
   - name: lbl_no_data
-    properties: {align: center, font_size: 14, foreground: '#888888', text: Select a project and import to view the Gantt chart., visible: true}
+    properties: {align: center, font_size: 14, foreground: '#888888',
+      text: Select a project and import to view the Gantt chart., visible: true}
     type: Label
+
   - name: pnl_gantt_container
     properties: {}
     type: ColumnPanel
-  - components:
-    - components:
-      - name: lbl_details_title
-        properties: {bold: true, font_size: 13, text: Activity Details}
-        type: Label
-      - name: lbl_activity_id
-        properties: {foreground: '#555555', text: ''}
-        type: Label
-      - name: lbl_activity_name
-        properties: {bold: true, text: ''}
-        type: Label
-      name: pnl_details_header
-      properties: {}
-      type: FlowPanel
-    - components:
-      - event_bindings: {}
-        name: tab_general
-        properties: {text: General}
-        type: Button
-      - event_bindings: {}
-        name: tab_status
-        properties: {text: Status}
-        type: Button
-      - event_bindings: {}
-        name: tab_codes
-        properties: {text: Codes}
-        type: Button
-      - event_bindings: {}
-        name: tab_relationships
-        properties: {text: Relationships}
-        type: Button
-      - event_bindings: {}
-        name: tab_notebook
-        properties: {text: Notebook}
-        type: Button
-      - event_bindings: {}
-        name: tab_udfs
-        properties: {text: UDFs}
-        type: Button
-      name: pnl_details_tabs
-      properties: {}
-      type: FlowPanel
-    - name: pnl_details_content
-      properties: {}
-      type: ColumnPanel
-    name: pnl_details
-    properties: {background: '#f9f9f9', border: '1px solid #cccccc'}
-    type: ColumnPanel
+
   layout_properties: {slot: default}
   name: content_panel
   properties: {}
   type: ColumnPanel
+
 - components:
   - name: lbl_nav_user
     properties: {text: ''}
     type: Label
-  - event_bindings: {}
-    name: btn_logout
+  - name: btn_logout
     properties: {text: Log Out}
     type: Button
+    event_bindings: {}
   layout_properties: {slot: nav-right}
   name: navbar_links
   properties: {}
   type: FlowPanel
+
 container:
   properties: {html: '@theme:standard-page.html'}
   type: HtmlTemplate
