@@ -1,50 +1,47 @@
 components:
 - components:
-
   - components:
-    - name: btn_toggle_sidebar
-      properties: {text: '◀', bold: true}
+    - event_bindings: {}
+      name: btn_toggle_sidebar
+      properties: {bold: true, text: ◀}
       type: Button
-      event_bindings: {}
     - name: lbl_project
       properties: {bold: true, foreground: '#1565c0', text: No project selected}
       type: Label
     - name: lbl_import
       properties: {foreground: '#555555', text: ''}
       type: Label
-    - name: btn_select_project
+    - event_bindings: {}
+      name: btn_select_project
       properties: {text: Change Project}
       type: Button
-      event_bindings: {}
-    - name: btn_toggle_details
+    - event_bindings: {}
+      name: btn_toggle_details
       properties: {text: Hide Details}
       type: Button
-      event_bindings: {}
     name: pnl_toolbar
     properties: {}
     type: FlowPanel
-
   - components:
-
     - components:
       - name: lbl_sidebar_layout
         properties: {bold: true, text: 'Layout:'}
         type: Label
-      - name: dd_layout
+      - event_bindings: {}
+        name: dd_layout
         properties: {placeholder: Default layout}
         type: DropDown
-        event_bindings: {}
       - name: lbl_sidebar_filters
         properties: {bold: true, text: 'Saved Filters:'}
         type: Label
-      - name: dd_saved_filters
+      - event_bindings: {}
+        name: dd_saved_filters
         properties: {placeholder: No filter applied}
         type: DropDown
-        event_bindings: {}
-      - name: btn_toggle_gfs
-        properties: {text: '▶ Grouping / Filtering / Sorting'}
+      - event_bindings: {}
+        name: btn_toggle_gfs
+        properties: {text: ▶ Grouping / Filtering / Sorting}
         type: Button
-        event_bindings: {}
       - components:
         - name: lbl_filter_status
           properties: {bold: true, text: Status}
@@ -73,32 +70,30 @@ components:
         - name: lbl_filter_actcode
           properties: {bold: true, text: 'Activity Code:'}
           type: Label
-        - name: dd_actcode_type
+        - event_bindings: {}
+          name: dd_actcode_type
           properties: {placeholder: Select code type...}
           type: DropDown
-          event_bindings: {}
         - name: dd_actcode_value
           properties: {placeholder: Select value...}
           type: DropDown
-        - name: btn_apply_filters
+        - event_bindings: {}
+          name: btn_apply_filters
           properties: {role: primary-color, text: Apply Filters}
           type: Button
-          event_bindings: {}
-        - name: btn_clear_filters
+        - event_bindings: {}
+          name: btn_clear_filters
           properties: {text: Clear Filters}
           type: Button
-          event_bindings: {}
         name: pnl_gfs
         properties: {visible: false}
         type: ColumnPanel
       name: pnl_sidebar
       properties: {}
       type: ColumnPanel
-
     - components:
       - name: lbl_no_data
-        properties: {align: center, font_size: 14, foreground: '#888888',
-          text: Select a project and import to view the Gantt chart., visible: true}
+        properties: {align: center, font_size: 14, foreground: '#888888', text: Select a project and import to view the Gantt chart., visible: true}
         type: Label
       - name: pnl_gantt_container
         properties: {}
@@ -106,11 +101,9 @@ components:
       name: pnl_gantt_area
       properties: {}
       type: ColumnPanel
-
     name: pnl_content_row
     properties: {}
     type: FlowPanel
-
   - components:
     - components:
       - name: lbl_details_title
@@ -126,30 +119,30 @@ components:
       properties: {}
       type: FlowPanel
     - components:
-      - name: tab_general
+      - event_bindings: {}
+        name: tab_general
         properties: {text: General}
         type: Button
-        event_bindings: {}
-      - name: tab_status
+      - event_bindings: {}
+        name: tab_status
         properties: {text: Status}
         type: Button
-        event_bindings: {}
-      - name: tab_codes
+      - event_bindings: {}
+        name: tab_codes
         properties: {text: Codes}
         type: Button
-        event_bindings: {}
-      - name: tab_relationships
+      - event_bindings: {}
+        name: tab_relationships
         properties: {text: Relationships}
         type: Button
-        event_bindings: {}
-      - name: tab_notebook
+      - event_bindings: {}
+        name: tab_notebook
         properties: {text: Notebook}
         type: Button
-        event_bindings: {}
-      - name: tab_udfs
+      - event_bindings: {}
+        name: tab_udfs
         properties: {text: UDFs}
         type: Button
-        event_bindings: {}
       name: pnl_details_tabs
       properties: {}
       type: FlowPanel
@@ -159,25 +152,22 @@ components:
     name: pnl_details
     properties: {background: '#f9f9f9', border: '1px solid #cccccc'}
     type: ColumnPanel
-
   layout_properties: {slot: default}
   name: content_panel
   properties: {}
   type: ColumnPanel
-
 - components:
   - name: lbl_nav_user
     properties: {text: ''}
     type: Label
-  - name: btn_logout
+  - event_bindings: {}
+    name: btn_logout
     properties: {text: Log Out}
     type: Button
-    event_bindings: {}
   layout_properties: {slot: nav-right}
   name: navbar_links
   properties: {}
   type: FlowPanel
-
 container:
   properties: {html: '@theme:standard-page.html'}
   type: HtmlTemplate

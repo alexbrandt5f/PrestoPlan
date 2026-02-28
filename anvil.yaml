@@ -45,362 +45,400 @@ native_deps:
 
     <script>
       // ===========================================================================
-      //  PrestoPlan - Gantt chart JavaScript layer
+      //  PrestoPlan Gantt - JavaScript layer
       //
-      //  Responsibilities:
-      //    - Receive data from Python and render Plotly chart
-      //    - Manage WBS collapse/expand with CSS animation
-      //    - Sync scroll between column table and chart
-      //    - Fire click events back to Python
-      //    - Handle Ctrl+/Ctrl- keyboard shortcuts
-      //
-      //  Constants:
-      //    COLLAPSE_MS  - transition duration in milliseconds (0 = instant)
+      //  Constants (tune these without touching logic):
+      //    PP_COLLAPSE_MS   : animation duration in ms (0 = instant)
+      //    PP_TOOLBAR_H     : height of top toolbar in px
+      //    PP_DETAILS_H     : height of bottom details pane in px
+      //    PP_HEADER_H      : height of frozen column header row in px
+      //    PP_ROW_H         : height of each Gantt row in px
+      //    PP_SIDEBAR_W     : width of sidebar when visible in px
       // ===========================================================================
 
-      var COLLAPSE_MS = 200;  // set to 0 for instant collapse/expand
+      var PP_COLLAPSE_MS = 200;
+      var PP_TOOLBAR_H   = 56;
+      var PP_DETAILS_H   = 220;
+      var PP_HEADER_H    = 48;
+      var PP_ROW_H       = 24;
+      var PP_SIDEBAR_W   = 220;
 
       var _pp = {
-        form:        null,   // Anvil form reference for callbacks
-        traces:      [],     // current Plotly traces
-        layout:      {},     // current Plotly layout
-        rowMeta:     [],     // [{rowType, wbsId, parentWbsId, depth, taskId}]
-        collapseState: {},   // {wbsId: bool}  true=expanded
-        wbsChildren: {},     // {wbsId: [childRowIndexes]}
+        form:          null,
+        traces:        [],
+        layout:        {},
+        rowMeta:       [],
+        collapseState: {},
+        totalRows:     0,
+        detailsVisible: true,
+        sidebarVisible: true,
       };
 
 
       // ---------------------------------------------------------------------------
-      //  Entry point called from Python _render_gantt
+      //  ENTRY POINT — called from Python after HTML is injected
       // ---------------------------------------------------------------------------
-      window._pp_init = function(form, traces, layout, rowMeta, collapseState) {
-        _pp.form         = form;
-        _pp.traces       = traces;
-        _pp.layout       = layout;
-        _pp.rowMeta      = rowMeta;
-        _pp.collapseState = collapseState;
+      window._pp_init = function(form, jsonData) {
+        var data = JSON.parse(jsonData);
 
-        // Build wbsChildren index: wbsId -> list of row indexes that belong to it
-        _pp.wbsChildren = {};
-        rowMeta.forEach(function(row, idx) {
-          if (row.parentWbsId) {
-            if (!_pp.wbsChildren[row.parentWbsId]) {
-              _pp.wbsChildren[row.parentWbsId] = [];
-            }
-            _pp.wbsChildren[row.parentWbsId].push(idx);
-          }
-        });
+        _pp.form          = form;
+        _pp.traces        = data.traces;
+        _pp.layout        = data.layout;
+        _pp.rowMeta       = data.rowMeta;
+        _pp.collapseState = data.collapseState;
+        _pp.totalRows     = data.rowMeta.length;
 
+        _pp_applyLayout();
         _pp_renderPlotly();
-        _pp_applyCollapseState();
+        _pp_applyCollapseState(false);
         _pp_setupScrollSync();
         _pp_setupKeyboard();
+        _pp_setupResize();
       };
 
 
       // ---------------------------------------------------------------------------
-      //  Render / re-render Plotly
+      //  LAYOUT — calculate and apply heights/widths based on window size
+      // ---------------------------------------------------------------------------
+      function _pp_applyLayout() {
+        var winH        = window.innerHeight;
+        var winW        = window.innerWidth;
+        var detailsH    = _pp.detailsVisible ? PP_DETAILS_H : 0;
+        var sidebarW    = _pp.sidebarVisible ? PP_SIDEBAR_W : 0;
+        var ganttH      = winH - PP_TOOLBAR_H - detailsH - PP_HEADER_H;
+        var ganttW      = winW - sidebarW;
+
+        // Outer wrapper
+        var wrapper = document.getElementById('pp-outer');
+        if (wrapper) {
+          wrapper.style.position = 'fixed';
+          wrapper.style.top      = PP_TOOLBAR_H + 'px';
+          wrapper.style.left     = '0';
+          wrapper.style.right    = '0';
+          wrapper.style.bottom   = detailsH + 'px';
+          wrapper.style.display  = 'flex';
+          wrapper.style.flexDirection = 'row';
+          wrapper.style.overflow = 'hidden';
+        }
+
+        // Sidebar
+        var sidebar = document.getElementById('pp-sidebar');
+        if (sidebar) {
+          sidebar.style.width    = sidebarW + 'px';
+          sidebar.style.minWidth = sidebarW + 'px';
+          sidebar.style.overflow = 'auto';
+          sidebar.style.display  = sidebarW === 0 ? 'none' : 'block';
+          sidebar.style.borderRight = '2px solid #cccccc';
+          sidebar.style.background  = '#fafafa';
+          sidebar.style.padding     = '8px';
+          sidebar.style.boxSizing   = 'border-box';
+        }
+
+        // Gantt area (header + scroll body)
+        var ganttArea = document.getElementById('pp-gantt-area');
+        if (ganttArea) {
+          ganttArea.style.flex      = '1 1 auto';
+          ganttArea.style.display   = 'flex';
+          ganttArea.style.flexDirection = 'column';
+          ganttArea.style.overflow  = 'hidden';
+          ganttArea.style.width     = ganttW + 'px';
+        }
+
+        // Frozen header row
+        var header = document.getElementById('pp-col-header');
+        if (header) {
+          header.style.height    = PP_HEADER_H + 'px';
+          header.style.minHeight = PP_HEADER_H + 'px';
+          header.style.overflow  = 'hidden';
+          header.style.flexShrink = '0';
+          header.style.display   = 'flex';
+          header.style.flexDirection = 'row';
+          header.style.borderBottom = '2px solid #999';
+          header.style.background   = '#1565c0';
+        }
+
+        // Scroll body (cols + bars side by side)
+        var body = document.getElementById('pp-scroll-body');
+        if (body) {
+          body.style.flex       = '1 1 auto';
+          body.style.display    = 'flex';
+          body.style.flexDirection = 'row';
+          body.style.overflow   = 'hidden';
+          body.style.height     = ganttH + 'px';
+        }
+
+        // Column data scroll pane
+        var colPane = document.getElementById('pp-col-data');
+        if (colPane) {
+          colPane.style.overflowY   = 'auto';
+          colPane.style.overflowX   = 'hidden';
+          colPane.style.flexShrink  = '0';
+          colPane.style.borderRight = '2px solid #999';
+        }
+
+        // Plotly scroll pane
+        var plotPane = document.getElementById('pp-plot-pane');
+        if (plotPane) {
+          plotPane.style.flex      = '1 1 auto';
+          plotPane.style.overflowY = 'auto';
+          plotPane.style.overflowX = 'auto';
+          plotPane.style.minWidth  = '200px';
+        }
+
+        // Details pane
+        var details = document.getElementById('pp-details');
+        if (details) {
+          details.style.position = 'fixed';
+          details.style.bottom   = '0';
+          details.style.left     = '0';
+          details.style.right    = '0';
+          details.style.height   = PP_DETAILS_H + 'px';
+          details.style.display  = _pp.detailsVisible ? 'block' : 'none';
+          details.style.zIndex   = '100';
+          details.style.background = '#f9f9f9';
+          details.style.borderTop  = '2px solid #cccccc';
+          details.style.overflow   = 'auto';
+        }
+
+        // Resize Plotly
+        var plotDiv = document.getElementById('pp-plotly-div');
+        if (plotDiv && plotDiv.data) {
+          Plotly.relayout(plotDiv, {
+            height: Math.max(100, _pp.totalRows * PP_ROW_H)
+          });
+        }
+      }
+
+      function _pp_setupResize() {
+        window.addEventListener('resize', function() {
+          _pp_applyLayout();
+        });
+      }
+
+
+      // ---------------------------------------------------------------------------
+      //  PLOTLY RENDER
       // ---------------------------------------------------------------------------
       function _pp_renderPlotly() {
-        var div = document.getElementById('plotly-div');
-        if (!div) return;
+        var div = document.getElementById('pp-plotly-div');
+        if (!div) {
+          setTimeout(_pp_renderPlotly, 300);
+          return;
+        }
 
         Plotly.newPlot(div, _pp.traces, _pp.layout, {
-          responsive:  true,
-          displayModeBar: false
+          responsive:     false,
+          displayModeBar: false,
         });
 
         div.on('plotly_click', function(data) {
-          if (!data || !data.points || !data.points.length) return;
-          var pt = data.points[0];
-          var taskId = pt.customdata || pt.text || '';
-          if (!taskId || !_pp.form) return;
-          anvil.call(_pp.form, '_on_gantt_click', {
-            x:      pt.x,
-            y:      pt.y,
-            text:   taskId
-          });
-        });
-      }
+               if (!data || !data.points || !data.points.length) return;
+               var pt     = data.points[0];
+               var taskId = '';
+               if (pt.customdata) taskId = String(pt.customdata);
+               else if (pt.text)  taskId = String(pt.text);
+               if (!taskId || taskId === 'undefined' || !_pp.form) return;
+               anvil.call(_pp.form, '_on_gantt_click', {x: pt.x, y: pt.y, text: taskId});
+               });
+               }
 
 
-      // ---------------------------------------------------------------------------
-      //  Apply current collapse state to table rows
-      //  Called on initial render and after toggle
-      // ---------------------------------------------------------------------------
-      function _pp_applyCollapseState() {
-        var table = document.getElementById('gantt-col-table');
-        if (!table) return;
+               // ---------------------------------------------------------------------------
+               //  COLLAPSE STATE
+               // ---------------------------------------------------------------------------
+               function _pp_isRowVisible(idx) {
+               var meta = _pp.rowMeta[idx];
+               if (!meta) return true;
+               var parentId = meta.parentWbsId;
+               while (parentId) {
+               if (_pp.collapseState[parentId] === false) return false;
+               // Find the WBS row that owns parentId to get its parent
+               var found = null;
+               for (var i = 0; i < _pp.rowMeta.length; i++) {
+               if (_pp.rowMeta[i].wbsId === parentId && _pp.rowMeta[i].rowType === 'WBS') {
+               found = _pp.rowMeta[i];
+               break;
+               }
+               }
+               parentId = found ? found.parentWbsId : null;
+               }
+               return true;
+               }
 
-        var rows = table.querySelectorAll('tr[data-row-idx]');
-        rows.forEach(function(tr) {
-          var idx     = parseInt(tr.getAttribute('data-row-idx'));
-          var meta    = _pp.rowMeta[idx];
-          if (!meta) return;
+               function _pp_applyCollapseState(animate) {
+               var table = document.getElementById('pp-col-table');
+               if (!table) return;
 
-          var visible = _pp_isRowVisible(idx);
-          if (visible) {
-            tr.style.display = '';
-          } else {
-            tr.style.display = 'none';
-          }
+               var rows = table.querySelectorAll('tr[data-row-idx]');
+               rows.forEach(function(tr) {
+               var idx    = parseInt(tr.getAttribute('data-row-idx'));
+               var meta   = _pp.rowMeta[idx];
+               if (!meta) return;
+               var vis = _pp_isRowVisible(idx);
 
-          // Update +/- icon on WBS rows
-          if (meta.rowType === 'WBS' && meta.wbsId) {
-            var icon = tr.querySelector('.wbs-toggle');
-            if (icon) {
-              var expanded = (_pp.collapseState[meta.wbsId] !== false);
-              icon.textContent = expanded ? '▼' : '▶';
-            }
-          }
-        });
+               if (animate && !vis && tr.style.display !== 'none') {
+               // Collapse animation
+               tr.style.transition = 'opacity ' + PP_COLLAPSE_MS + 'ms ease';
+               tr.style.opacity = '0';
+               setTimeout(function() {
+               tr.style.display = 'none';
+               tr.style.opacity = '';
+               tr.style.transition = '';
+               }, PP_COLLAPSE_MS);
+               } else if (animate && vis && tr.style.display === 'none') {
+               // Expand animation
+               tr.style.display = '';
+               tr.style.opacity = '0';
+               tr.style.transition = 'opacity ' + PP_COLLAPSE_MS + 'ms ease';
+               setTimeout(function() {
+               tr.style.opacity = '1';
+               setTimeout(function() {
+               tr.style.opacity = '';
+               tr.style.transition = '';
+               }, PP_COLLAPSE_MS);
+               }, 10);
+               } else {
+               tr.style.display = vis ? '' : 'none';
+               }
 
-        // Update Plotly y-axis visibility
-        _pp_updatePlotlyVisibility();
-      }
+               // Update toggle icon
+               if (meta.rowType === 'WBS' && meta.wbsId) {
+               var icon = tr.querySelector('.pp-wbs-icon');
+               if (icon) {
+               icon.textContent = (_pp.collapseState[meta.wbsId] !== false) ? '▼' : '▶';
+               }
+               }
+               });
 
+               setTimeout(_pp_updatePlotlyVisibility, animate ? PP_COLLAPSE_MS + 50 : 0);
+               }
 
-      // ---------------------------------------------------------------------------
-      //  Determine if a row should be visible given current collapse state
-      // ---------------------------------------------------------------------------
-      function _pp_isRowVisible(idx) {
-        var meta = _pp.rowMeta[idx];
-        if (!meta) return true;
+               function _pp_updatePlotlyVisibility() {
+               var div = document.getElementById('pp-plotly-div');
+               if (!div) return;
 
-        // Walk up parent chain - if any ancestor is collapsed, hide this row
-        var wbsId = meta.parentWbsId;
-        while (wbsId) {
-          if (_pp.collapseState[wbsId] === false) return false;
-          // Find parent of this wbsId
-          var parentMeta = null;
-          for (var i = 0; i < _pp.rowMeta.length; i++) {
-            if (_pp.rowMeta[i].wbsId === wbsId) {
-              parentMeta = _pp.rowMeta[i];
-              break;
-            }
-          }
-          wbsId = parentMeta ? parentMeta.parentWbsId : null;
-        }
-        return true;
-      }
+               // Build visible row set
+               var visible = {};
+               for (var i = 0; i < _pp.rowMeta.length; i++) {
+               if (_pp_isRowVisible(i)) visible[i] = true;
+               }
 
+               // Filter traces
+               var newTraces = JSON.parse(JSON.stringify(_pp.traces));
+               newTraces.forEach(function(trace) {
+               if (!trace.y) return;
+               var nx = [], ny = [], nt = [], nc = [];
+               for (var i = 0; i < trace.y.length; i++) {
+               var y = trace.y[i];
+               if (y === null || y === undefined) {
+               nx.push(null); ny.push(null);
+               nt.push(trace.text ? trace.text[i] : '');
+               nc.push(trace.customdata ? trace.customdata[i] : '');
+               } else {
+               var ri = Math.round(y);
+               if (visible[ri]) {
+               nx.push(trace.x[i]); ny.push(y);
+               nt.push(trace.text ? trace.text[i] : '');
+               nc.push(trace.customdata ? trace.customdata[i] : '');
+               }
+               }
+               }
+               trace.x = nx; trace.y = ny;
+               if (trace.text)       trace.text       = nt;
+               if (trace.customdata) trace.customdata = nc;
+               });
 
-      // ---------------------------------------------------------------------------
-      //  Update Plotly trace visibility based on collapse state
-      //  Hides y-positions that are collapsed by setting marker size to 0
-      // ---------------------------------------------------------------------------
-      function _pp_updatePlotlyVisibility() {
-        var div = document.getElementById('plotly-div');
-        if (!div || !div.data) return;
+               var visCount  = Object.keys(visible).length;
+               var newHeight = Math.max(100, visCount * PP_ROW_H);
+               var newLayout = JSON.parse(JSON.stringify(_pp.layout));
+               newLayout.height      = newHeight;
+               newLayout.yaxis.range = [_pp.totalRows, -1];
 
-        // Build set of visible row indexes
-        var visibleRows = {};
-        _pp.rowMeta.forEach(function(meta, idx) {
-          if (_pp_isRowVisible(idx)) visibleRows[idx] = true;
-        });
-
-        // Update each trace - set opacity based on visibility
-        // We use a full re-render since Plotly partial updates are complex here
-        var newTraces = JSON.parse(JSON.stringify(_pp.traces));
-
-        newTraces.forEach(function(trace) {
-          if (!trace.y) return;
-          var newX = [], newY = [], newText = [], newCustom = [];
-          for (var i = 0; i < trace.y.length; i++) {
-            var y = trace.y[i];
-            if (y === null || y === undefined) {
-              // Keep nulls (line breaks between bars)
-              newX.push(trace.x ? trace.x[i] : null);
-              newY.push(null);
-              if (trace.text) newText.push(trace.text[i] || '');
-              if (trace.customdata) newCustom.push(trace.customdata[i] || '');
-            } else {
-              var rowIdx = Math.round(y);
-              if (visibleRows[rowIdx]) {
-                newX.push(trace.x ? trace.x[i] : null);
-                newY.push(y);
-                if (trace.text) newText.push(trace.text[i] || '');
-                if (trace.customdata) newCustom.push(trace.customdata[i] || '');
-              }
-            }
-          }
-          trace.x = newX;
-          trace.y = newY;
-          if (trace.text) trace.text = newText;
-          if (trace.customdata) trace.customdata = newCustom;
-        });
-
-        // Update chart height based on visible row count
-        var visibleCount = Object.keys(visibleRows).length;
-        var ROW_HEIGHT   = 24;
-        var HEADER_H     = 48;
-        var newHeight    = HEADER_H + (visibleCount * ROW_HEIGHT);
-
-        var newLayout = JSON.parse(JSON.stringify(_pp.layout));
-        newLayout.height        = newHeight;
-        newLayout.yaxis.range   = [_pp.rowMeta.length, -1];
-
-        document.getElementById('plotly-div').style.height = newHeight + 'px';
-
-        Plotly.react(div, newTraces, newLayout, {
-          responsive: true,
-          displayModeBar: false
-        });
-      }
+               if (div.style) div.style.height = newHeight + 'px';
+               Plotly.react(div, newTraces, newLayout, {responsive: false, displayModeBar: false});
+               }
 
 
-      // ---------------------------------------------------------------------------
-      //  Toggle one WBS node expanded/collapsed
-      // ---------------------------------------------------------------------------
-      window._pp_toggleWbs = function(wbsId) {
-        var current  = (_pp.collapseState[wbsId] !== false);
-        var expanded = !current;
-        _pp.collapseState[wbsId] = expanded;
+               // ---------------------------------------------------------------------------
+               //  WBS TOGGLE
+               // ---------------------------------------------------------------------------
+               window._pp_toggleWbs = function(wbsId) {
+               var cur      = (_pp.collapseState[wbsId] !== false);
+               _pp.collapseState[wbsId] = !cur;
+               _pp_applyCollapseState(PP_COLLAPSE_MS > 0);
+               if (_pp.form) {
+               anvil.call(_pp.form, '_on_collapse_change', wbsId, !cur);
+               }
+               };
 
-        // Animate table rows
-        var table = document.getElementById('gantt-col-table');
-        if (!table) return;
+               window._pp_expandAll = function() {
+               _pp.rowMeta.forEach(function(m) {
+               if (m.wbsId) _pp.collapseState[m.wbsId] = true;
+               });
+               _pp_applyCollapseState(false);
+               if (_pp.form) anvil.call(_pp.form, '_on_collapse_all', true);
+               };
 
-        var rows = table.querySelectorAll('tr[data-row-idx]');
-        var toAnimate = [];
-
-        rows.forEach(function(tr) {
-          var idx  = parseInt(tr.getAttribute('data-row-idx'));
-          var meta = _pp.rowMeta[idx];
-          if (!meta || meta.parentWbsId !== wbsId) return;
-          toAnimate.push(tr);
-        });
-
-        if (COLLAPSE_MS > 0 && !expanded) {
-          // Collapse: animate height to 0 then hide
-          toAnimate.forEach(function(tr) {
-            tr.style.transition  = 'all ' + COLLAPSE_MS + 'ms ease';
-            tr.style.maxHeight   = tr.offsetHeight + 'px';
-            tr.style.overflow    = 'hidden';
-            requestAnimationFrame(function() {
-              tr.style.maxHeight = '0px';
-              tr.style.opacity   = '0';
-            });
-          });
-          setTimeout(function() {
-            toAnimate.forEach(function(tr) {
-              tr.style.display = 'none';
-              tr.style.maxHeight   = '';
-              tr.style.opacity     = '';
-              tr.style.transition  = '';
-              tr.style.overflow    = '';
-            });
-            _pp_updatePlotlyVisibility();
-          }, COLLAPSE_MS);
-        } else if (COLLAPSE_MS > 0 && expanded) {
-          // Expand: show then animate height from 0
-          toAnimate.forEach(function(tr) {
-            // Only show if parent chain is visible
-            var idx = parseInt(tr.getAttribute('data-row-idx'));
-            if (!_pp_isRowVisible(idx)) return;
-            tr.style.display    = '';
-            tr.style.maxHeight  = '0px';
-            tr.style.overflow   = 'hidden';
-            tr.style.opacity    = '0';
-            tr.style.transition = 'all ' + COLLAPSE_MS + 'ms ease';
-            requestAnimationFrame(function() {
-              requestAnimationFrame(function() {
-                tr.style.maxHeight = '48px';
-                tr.style.opacity   = '1';
-              });
-            });
-          });
-          setTimeout(function() {
-            toAnimate.forEach(function(tr) {
-              tr.style.maxHeight  = '';
-              tr.style.overflow   = '';
-              tr.style.opacity    = '';
-              tr.style.transition = '';
-            });
-            _pp_updatePlotlyVisibility();
-          }, COLLAPSE_MS);
-        } else {
-          // Instant
-          _pp_applyCollapseState();
-        }
-
-        // Update icon
-        var iconRow = table.querySelector('tr[data-wbs-id="' + wbsId + '"]');
-        if (iconRow) {
-          var icon = iconRow.querySelector('.wbs-toggle');
-          if (icon) icon.textContent = expanded ? '▼' : '▶';
-        }
-
-        // Notify Python to save state
-        if (_pp.form) {
-          anvil.call(_pp.form, '_on_collapse_change', wbsId, expanded);
-        }
-      };
+               window._pp_collapseAll = function() {
+               _pp.rowMeta.forEach(function(m) {
+               if (m.wbsId && m.depth === 1) _pp.collapseState[m.wbsId] = false;
+               });
+               _pp_applyCollapseState(false);
+               if (_pp.form) anvil.call(_pp.form, '_on_collapse_all', false);
+               };
 
 
-      // ---------------------------------------------------------------------------
-      //  Expand all / Collapse all
-      // ---------------------------------------------------------------------------
-      window._pp_expandAll = function() {
-        _pp.rowMeta.forEach(function(meta) {
-          if (meta.wbsId) _pp.collapseState[meta.wbsId] = true;
-        });
-        _pp_applyCollapseState();
-        if (_pp.form) anvil.call(_pp.form, '_on_collapse_all', true);
-      };
-
-      window._pp_collapseAll = function() {
-        _pp.rowMeta.forEach(function(meta) {
-          if (meta.wbsId && meta.depth === 1) {
-            _pp.collapseState[meta.wbsId] = false;
-          }
-        });
-        _pp_applyCollapseState();
-        if (_pp.form) anvil.call(_pp.form, '_on_collapse_all', false);
-      };
+               // ---------------------------------------------------------------------------
+               //  KEYBOARD
+               // ---------------------------------------------------------------------------
+               function _pp_setupKeyboard() {
+               document.addEventListener('keydown', function(e) {
+               if (!e.ctrlKey) return;
+               if (e.key === '=' || e.key === '+') { e.preventDefault(); _pp_expandAll(); }
+               if (e.key === '-')                  { e.preventDefault(); _pp_collapseAll(); }
+               });
+               }
 
 
-      // ---------------------------------------------------------------------------
-      //  Keyboard shortcuts: Ctrl+= (expand all), Ctrl+- (collapse all)
-      // ---------------------------------------------------------------------------
-      function _pp_setupKeyboard() {
-        document.addEventListener('keydown', function(e) {
-          if (!e.ctrlKey) return;
-          if (e.key === '=' || e.key === '+') {
-            e.preventDefault();
-            _pp_expandAll();
-          } else if (e.key === '-') {
-            e.preventDefault();
-            _pp_collapseAll();
-          }
-        });
-      }
+               // ---------------------------------------------------------------------------
+               //  SCROLL SYNC
+               // ---------------------------------------------------------------------------
+               function _pp_setupScrollSync() {
+               var colPane  = document.getElementById('pp-col-data');
+               var plotPane = document.getElementById('pp-plot-pane');
+               if (!colPane || !plotPane) return;
+               var syncing = false;
+               colPane.addEventListener('scroll', function() {
+               if (syncing) return; syncing = true;
+               plotPane.scrollTop = colPane.scrollTop;
+               syncing = false;
+               });
+               plotPane.addEventListener('scroll', function() {
+               if (syncing) return; syncing = true;
+               colPane.scrollTop = plotPane.scrollTop;
+               syncing = false;
+               });
+               }
 
 
-      // ---------------------------------------------------------------------------
-      //  Scroll sync between column table and Plotly chart
-      // ---------------------------------------------------------------------------
-      function _pp_setupScrollSync() {
-        var cols = document.getElementById('gantt-cols');
-        var plot = document.getElementById('gantt-plot');
-        if (!cols || !plot) return;
+               // ---------------------------------------------------------------------------
+               //  SIDEBAR TOGGLE (called from Python via anvil.js.call_js)
+               // ---------------------------------------------------------------------------
+               window._pp_toggleSidebar = function(visible) {
+               _pp.sidebarVisible = visible;
+               _pp_applyLayout();
+               };
 
-        var syncing = false;
-        cols.addEventListener('scroll', function() {
-          if (syncing) return;
-          syncing = true;
-          plot.scrollTop = cols.scrollTop;
-          syncing = false;
-        });
-        plot.addEventListener('scroll', function() {
-          if (syncing) return;
-          syncing = true;
-          cols.scrollTop = plot.scrollTop;
-          syncing = false;
-        });
-      }
 
-    </script>
+               // ---------------------------------------------------------------------------
+               //  DETAILS TOGGLE
+               // ---------------------------------------------------------------------------
+               window._pp_toggleDetails = function(visible) {
+               _pp.detailsVisible = visible;
+               _pp_applyLayout();
+               };
+
+               </script>
 package_name: PrestoPlan
 renamed: true
 runtime_options:
