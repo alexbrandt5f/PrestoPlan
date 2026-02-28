@@ -44,29 +44,362 @@ native_deps:
     <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 
     <script>
-      // PrestoPlan - Plotly renderer called from Anvil Python
-      function _prestoplan_render_plotly(traces, layout) {
-        var div = document.getElementById('plotly-div');
-        if (!div) {
-          setTimeout(function() {
-            div = document.getElementById('plotly-div');
-            if (div) Plotly.newPlot(div, traces, layout, {responsive: true});
-          }, 300);
-          return;
-        }
-        Plotly.newPlot(div, traces, layout, {responsive: true});
+      // ===========================================================================
+      //  PrestoPlan - Gantt chart JavaScript layer
+      //
+      //  Responsibilities:
+      //    - Receive data from Python and render Plotly chart
+      //    - Manage WBS collapse/expand with CSS animation
+      //    - Sync scroll between column table and chart
+      //    - Fire click events back to Python
+      //    - Handle Ctrl+/Ctrl- keyboard shortcuts
+      //
+      //  Constants:
+      //    COLLAPSE_MS  - transition duration in milliseconds (0 = instant)
+      // ===========================================================================
 
-        // Wire click events back to Python
+      var COLLAPSE_MS = 200;  // set to 0 for instant collapse/expand
+
+      var _pp = {
+        form:        null,   // Anvil form reference for callbacks
+        traces:      [],     // current Plotly traces
+        layout:      {},     // current Plotly layout
+        rowMeta:     [],     // [{rowType, wbsId, parentWbsId, depth, taskId}]
+        collapseState: {},   // {wbsId: bool}  true=expanded
+        wbsChildren: {},     // {wbsId: [childRowIndexes]}
+      };
+
+
+      // ---------------------------------------------------------------------------
+      //  Entry point called from Python _render_gantt
+      // ---------------------------------------------------------------------------
+      window._pp_init = function(form, traces, layout, rowMeta, collapseState) {
+        _pp.form         = form;
+        _pp.traces       = traces;
+        _pp.layout       = layout;
+        _pp.rowMeta      = rowMeta;
+        _pp.collapseState = collapseState;
+
+        // Build wbsChildren index: wbsId -> list of row indexes that belong to it
+        _pp.wbsChildren = {};
+        rowMeta.forEach(function(row, idx) {
+          if (row.parentWbsId) {
+            if (!_pp.wbsChildren[row.parentWbsId]) {
+              _pp.wbsChildren[row.parentWbsId] = [];
+            }
+            _pp.wbsChildren[row.parentWbsId].push(idx);
+          }
+        });
+
+        _pp_renderPlotly();
+        _pp_applyCollapseState();
+        _pp_setupScrollSync();
+        _pp_setupKeyboard();
+      };
+
+
+      // ---------------------------------------------------------------------------
+      //  Render / re-render Plotly
+      // ---------------------------------------------------------------------------
+      function _pp_renderPlotly() {
+        var div = document.getElementById('plotly-div');
+        if (!div) return;
+
+        Plotly.newPlot(div, _pp.traces, _pp.layout, {
+          responsive:  true,
+          displayModeBar: false
+        });
+
         div.on('plotly_click', function(data) {
           if (!data || !data.points || !data.points.length) return;
           var pt = data.points[0];
-          anvil.call(window._prestoplan_form, '_on_gantt_click', {
-            x: pt.x,
-            y: pt.y,
-            text: pt.text || (pt.customdata || '')
+          var taskId = pt.customdata || pt.text || '';
+          if (!taskId || !_pp.form) return;
+          anvil.call(_pp.form, '_on_gantt_click', {
+            x:      pt.x,
+            y:      pt.y,
+            text:   taskId
           });
         });
       }
+
+
+      // ---------------------------------------------------------------------------
+      //  Apply current collapse state to table rows
+      //  Called on initial render and after toggle
+      // ---------------------------------------------------------------------------
+      function _pp_applyCollapseState() {
+        var table = document.getElementById('gantt-col-table');
+        if (!table) return;
+
+        var rows = table.querySelectorAll('tr[data-row-idx]');
+        rows.forEach(function(tr) {
+          var idx     = parseInt(tr.getAttribute('data-row-idx'));
+          var meta    = _pp.rowMeta[idx];
+          if (!meta) return;
+
+          var visible = _pp_isRowVisible(idx);
+          if (visible) {
+            tr.style.display = '';
+          } else {
+            tr.style.display = 'none';
+          }
+
+          // Update +/- icon on WBS rows
+          if (meta.rowType === 'WBS' && meta.wbsId) {
+            var icon = tr.querySelector('.wbs-toggle');
+            if (icon) {
+              var expanded = (_pp.collapseState[meta.wbsId] !== false);
+              icon.textContent = expanded ? '▼' : '▶';
+            }
+          }
+        });
+
+        // Update Plotly y-axis visibility
+        _pp_updatePlotlyVisibility();
+      }
+
+
+      // ---------------------------------------------------------------------------
+      //  Determine if a row should be visible given current collapse state
+      // ---------------------------------------------------------------------------
+      function _pp_isRowVisible(idx) {
+        var meta = _pp.rowMeta[idx];
+        if (!meta) return true;
+
+        // Walk up parent chain - if any ancestor is collapsed, hide this row
+        var wbsId = meta.parentWbsId;
+        while (wbsId) {
+          if (_pp.collapseState[wbsId] === false) return false;
+          // Find parent of this wbsId
+          var parentMeta = null;
+          for (var i = 0; i < _pp.rowMeta.length; i++) {
+            if (_pp.rowMeta[i].wbsId === wbsId) {
+              parentMeta = _pp.rowMeta[i];
+              break;
+            }
+          }
+          wbsId = parentMeta ? parentMeta.parentWbsId : null;
+        }
+        return true;
+      }
+
+
+      // ---------------------------------------------------------------------------
+      //  Update Plotly trace visibility based on collapse state
+      //  Hides y-positions that are collapsed by setting marker size to 0
+      // ---------------------------------------------------------------------------
+      function _pp_updatePlotlyVisibility() {
+        var div = document.getElementById('plotly-div');
+        if (!div || !div.data) return;
+
+        // Build set of visible row indexes
+        var visibleRows = {};
+        _pp.rowMeta.forEach(function(meta, idx) {
+          if (_pp_isRowVisible(idx)) visibleRows[idx] = true;
+        });
+
+        // Update each trace - set opacity based on visibility
+        // We use a full re-render since Plotly partial updates are complex here
+        var newTraces = JSON.parse(JSON.stringify(_pp.traces));
+
+        newTraces.forEach(function(trace) {
+          if (!trace.y) return;
+          var newX = [], newY = [], newText = [], newCustom = [];
+          for (var i = 0; i < trace.y.length; i++) {
+            var y = trace.y[i];
+            if (y === null || y === undefined) {
+              // Keep nulls (line breaks between bars)
+              newX.push(trace.x ? trace.x[i] : null);
+              newY.push(null);
+              if (trace.text) newText.push(trace.text[i] || '');
+              if (trace.customdata) newCustom.push(trace.customdata[i] || '');
+            } else {
+              var rowIdx = Math.round(y);
+              if (visibleRows[rowIdx]) {
+                newX.push(trace.x ? trace.x[i] : null);
+                newY.push(y);
+                if (trace.text) newText.push(trace.text[i] || '');
+                if (trace.customdata) newCustom.push(trace.customdata[i] || '');
+              }
+            }
+          }
+          trace.x = newX;
+          trace.y = newY;
+          if (trace.text) trace.text = newText;
+          if (trace.customdata) trace.customdata = newCustom;
+        });
+
+        // Update chart height based on visible row count
+        var visibleCount = Object.keys(visibleRows).length;
+        var ROW_HEIGHT   = 24;
+        var HEADER_H     = 48;
+        var newHeight    = HEADER_H + (visibleCount * ROW_HEIGHT);
+
+        var newLayout = JSON.parse(JSON.stringify(_pp.layout));
+        newLayout.height        = newHeight;
+        newLayout.yaxis.range   = [_pp.rowMeta.length, -1];
+
+        document.getElementById('plotly-div').style.height = newHeight + 'px';
+
+        Plotly.react(div, newTraces, newLayout, {
+          responsive: true,
+          displayModeBar: false
+        });
+      }
+
+
+      // ---------------------------------------------------------------------------
+      //  Toggle one WBS node expanded/collapsed
+      // ---------------------------------------------------------------------------
+      window._pp_toggleWbs = function(wbsId) {
+        var current  = (_pp.collapseState[wbsId] !== false);
+        var expanded = !current;
+        _pp.collapseState[wbsId] = expanded;
+
+        // Animate table rows
+        var table = document.getElementById('gantt-col-table');
+        if (!table) return;
+
+        var rows = table.querySelectorAll('tr[data-row-idx]');
+        var toAnimate = [];
+
+        rows.forEach(function(tr) {
+          var idx  = parseInt(tr.getAttribute('data-row-idx'));
+          var meta = _pp.rowMeta[idx];
+          if (!meta || meta.parentWbsId !== wbsId) return;
+          toAnimate.push(tr);
+        });
+
+        if (COLLAPSE_MS > 0 && !expanded) {
+          // Collapse: animate height to 0 then hide
+          toAnimate.forEach(function(tr) {
+            tr.style.transition  = 'all ' + COLLAPSE_MS + 'ms ease';
+            tr.style.maxHeight   = tr.offsetHeight + 'px';
+            tr.style.overflow    = 'hidden';
+            requestAnimationFrame(function() {
+              tr.style.maxHeight = '0px';
+              tr.style.opacity   = '0';
+            });
+          });
+          setTimeout(function() {
+            toAnimate.forEach(function(tr) {
+              tr.style.display = 'none';
+              tr.style.maxHeight   = '';
+              tr.style.opacity     = '';
+              tr.style.transition  = '';
+              tr.style.overflow    = '';
+            });
+            _pp_updatePlotlyVisibility();
+          }, COLLAPSE_MS);
+        } else if (COLLAPSE_MS > 0 && expanded) {
+          // Expand: show then animate height from 0
+          toAnimate.forEach(function(tr) {
+            // Only show if parent chain is visible
+            var idx = parseInt(tr.getAttribute('data-row-idx'));
+            if (!_pp_isRowVisible(idx)) return;
+            tr.style.display    = '';
+            tr.style.maxHeight  = '0px';
+            tr.style.overflow   = 'hidden';
+            tr.style.opacity    = '0';
+            tr.style.transition = 'all ' + COLLAPSE_MS + 'ms ease';
+            requestAnimationFrame(function() {
+              requestAnimationFrame(function() {
+                tr.style.maxHeight = '48px';
+                tr.style.opacity   = '1';
+              });
+            });
+          });
+          setTimeout(function() {
+            toAnimate.forEach(function(tr) {
+              tr.style.maxHeight  = '';
+              tr.style.overflow   = '';
+              tr.style.opacity    = '';
+              tr.style.transition = '';
+            });
+            _pp_updatePlotlyVisibility();
+          }, COLLAPSE_MS);
+        } else {
+          // Instant
+          _pp_applyCollapseState();
+        }
+
+        // Update icon
+        var iconRow = table.querySelector('tr[data-wbs-id="' + wbsId + '"]');
+        if (iconRow) {
+          var icon = iconRow.querySelector('.wbs-toggle');
+          if (icon) icon.textContent = expanded ? '▼' : '▶';
+        }
+
+        // Notify Python to save state
+        if (_pp.form) {
+          anvil.call(_pp.form, '_on_collapse_change', wbsId, expanded);
+        }
+      };
+
+
+      // ---------------------------------------------------------------------------
+      //  Expand all / Collapse all
+      // ---------------------------------------------------------------------------
+      window._pp_expandAll = function() {
+        _pp.rowMeta.forEach(function(meta) {
+          if (meta.wbsId) _pp.collapseState[meta.wbsId] = true;
+        });
+        _pp_applyCollapseState();
+        if (_pp.form) anvil.call(_pp.form, '_on_collapse_all', true);
+      };
+
+      window._pp_collapseAll = function() {
+        _pp.rowMeta.forEach(function(meta) {
+          if (meta.wbsId && meta.depth === 1) {
+            _pp.collapseState[meta.wbsId] = false;
+          }
+        });
+        _pp_applyCollapseState();
+        if (_pp.form) anvil.call(_pp.form, '_on_collapse_all', false);
+      };
+
+
+      // ---------------------------------------------------------------------------
+      //  Keyboard shortcuts: Ctrl+= (expand all), Ctrl+- (collapse all)
+      // ---------------------------------------------------------------------------
+      function _pp_setupKeyboard() {
+        document.addEventListener('keydown', function(e) {
+          if (!e.ctrlKey) return;
+          if (e.key === '=' || e.key === '+') {
+            e.preventDefault();
+            _pp_expandAll();
+          } else if (e.key === '-') {
+            e.preventDefault();
+            _pp_collapseAll();
+          }
+        });
+      }
+
+
+      // ---------------------------------------------------------------------------
+      //  Scroll sync between column table and Plotly chart
+      // ---------------------------------------------------------------------------
+      function _pp_setupScrollSync() {
+        var cols = document.getElementById('gantt-cols');
+        var plot = document.getElementById('gantt-plot');
+        if (!cols || !plot) return;
+
+        var syncing = false;
+        cols.addEventListener('scroll', function() {
+          if (syncing) return;
+          syncing = true;
+          plot.scrollTop = cols.scrollTop;
+          syncing = false;
+        });
+        plot.addEventListener('scroll', function() {
+          if (syncing) return;
+          syncing = true;
+          cols.scrollTop = plot.scrollTop;
+          syncing = false;
+        });
+      }
+
     </script>
 package_name: PrestoPlan
 renamed: true

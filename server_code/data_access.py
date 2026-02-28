@@ -36,9 +36,9 @@ from . import auth
 
 def _query(conn, sql, params=None):
   """
-    Execute a SELECT on an existing psycopg2 connection.
-    Returns list of dicts. Bypasses db.query() decorator to reuse connection.
-    """
+  Execute a SELECT on an existing psycopg2 connection.
+  Returns list of dicts. Bypasses db.query() decorator to reuse connection.
+  """
   import psycopg2.extras
   with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
     cur.execute(sql, params or [])
@@ -52,9 +52,9 @@ def _query(conn, sql, params=None):
 
 def _to_native_date(val):
   """
-    Convert a value to a Python date object.
-    Handles None, datetime.date, datetime.datetime, and string fallback.
-    """
+  Convert a value to a Python date object.
+  Handles None, datetime.date, datetime.datetime, and string fallback.
+  """
   if val is None:
     return None
   if isinstance(val, date) and not isinstance(val, datetime):
@@ -69,9 +69,9 @@ def _to_native_date(val):
 
 def _format_date(val):
   """
-    Format a date value as MM/DD/YYYY for display.
-    Fast path for native date/datetime objects from psycopg2.
-    """
+  Format a date value as MM/DD/YYYY for display.
+  Fast path for native date/datetime objects from psycopg2.
+  """
   if val is None:
     return ""
   if isinstance(val, datetime):
@@ -95,20 +95,20 @@ def _format_date(val):
 
 def _default_columns():
   """
-    Return the default Gantt chart columns.
-    Activity ID, Activity Name, Orig Dur, Rem Dur,
-    Start Date, AS checkbox, Finish Date, AF checkbox, Total Float.
-    """
+  Return the default Gantt chart columns.
+  Activity ID, Activity Name, Orig Dur, Rem Dur,
+  Start Date, AS checkbox, Finish Date, AF checkbox, Total Float.
+  """
   return [
-    {"source": "TASK",  "field": "task_code",            "label": "Activity ID",   "width": 14},
-    {"source": "TASK",  "field": "task_name",             "label": "Activity Name", "width": 40},
-    {"source": "TASK",  "field": "target_drtn_hr_cnt",    "label": "Orig Dur",      "width": 9,  "duration_field": True},
-    {"source": "TASK",  "field": "remain_drtn_hr_cnt",    "label": "Rem Dur",       "width": 9,  "duration_field": True},
-    {"source": "CALC",  "field": "start_date",            "label": "Start Date",    "width": 12, "is_date": True},
-    {"source": "CALC",  "field": "actual_start_flag",     "label": "AS",            "width": 4,  "is_checkbox": True},
-    {"source": "CALC",  "field": "finish_date",           "label": "Finish Date",   "width": 12, "is_date": True},
-    {"source": "CALC",  "field": "actual_finish_flag",    "label": "AF",            "width": 4,  "is_checkbox": True},
-    {"source": "TASK",  "field": "total_float_hr_cnt",    "label": "Total Float",   "width": 10, "duration_field": True},
+    {"source": "TASK", "field": "task_code",         "label": "Activity ID",   "width": 14},
+    {"source": "TASK", "field": "task_name",          "label": "Activity Name", "width": 40},
+    {"source": "TASK", "field": "target_drtn_hr_cnt", "label": "Orig Dur",      "width": 9,  "duration_field": True},
+    {"source": "TASK", "field": "remain_drtn_hr_cnt", "label": "Rem Dur",       "width": 9,  "duration_field": True},
+    {"source": "CALC", "field": "start_date",         "label": "Start Date",    "width": 12, "is_date": True},
+    {"source": "CALC", "field": "actual_start_flag",  "label": "AS",            "width": 4,  "is_checkbox": True},
+    {"source": "CALC", "field": "finish_date",        "label": "Finish Date",   "width": 12, "is_date": True},
+    {"source": "CALC", "field": "actual_finish_flag", "label": "AF",            "width": 4,  "is_checkbox": True},
+    {"source": "TASK", "field": "total_float_hr_cnt", "label": "Total Float",   "width": 10, "duration_field": True},
   ]
 
 
@@ -136,24 +136,24 @@ def _get_calendar_hours_map(conn, import_id):
 
 def _get_activity_code_map(conn, import_id):
   """
-    Build {task_id: {type_name: value_short_name}} from TASKACTV/ACTVCODE/ACTVTYPE.
-    Used for Gantt column values and filter matching.
-    """
+  Build {task_id: {type_name: value_short_name}} from TASKACTV/ACTVCODE/ACTVTYPE.
+  Used for Gantt column values and filter matching.
+  """
   code_map = {}
   try:
     rows = _query(conn, """
-            SELECT ta.task_id,
-                   at2.actv_code_type AS type_name,
-                   ac.short_name      AS value_name
-            FROM p6_taskactv ta
-            JOIN p6_actvcode ac
-              ON ac.actv_code_id = ta.actv_code_id
-             AND ac.import_id    = ta.import_id
-            JOIN p6_actvtype at2
-              ON at2.actv_code_type_id = ac.actv_code_type_id
-             AND at2.import_id         = ta.import_id
-            WHERE ta.import_id = %s
-        """, [import_id])
+      SELECT ta.task_id,
+             at2.actv_code_type AS type_name,
+             ac.short_name      AS value_name
+      FROM p6_taskactv ta
+      JOIN p6_actvcode ac
+        ON ac.actv_code_id = ta.actv_code_id
+       AND ac.import_id    = ta.import_id
+      JOIN p6_actvtype at2
+        ON at2.actv_code_type_id = ac.actv_code_type_id
+       AND at2.import_id         = ta.import_id
+      WHERE ta.import_id = %s
+    """, [import_id])
     for row in rows:
       tid = row["task_id"]
       if tid not in code_map:
@@ -166,32 +166,32 @@ def _get_activity_code_map(conn, import_id):
 
 def _get_udf_map(conn, import_id):
   """
-    Build {task_id: {udf_label: display_value}} from UDFVALUE/UDFTYPE.
-    Handles text, number, date, and code_id field types.
-    """
+  Build {task_id: {udf_label: display_value}} from UDFVALUE/UDFTYPE.
+  Handles text, number, date, and code_id field types.
+  """
   udf_map = {}
   try:
     rows = _query(conn, """
-            SELECT uv.fk_id AS task_id,
-                   ut.udf_type_label,
-                   uv.udf_text,
-                   uv.udf_number,
-                   uv.udf_date,
-                   uv.udf_code_id
-            FROM p6_udfvalue uv
-            JOIN p6_udftype ut
-              ON ut.udf_type_id = uv.udf_type_id
-             AND ut.import_id   = uv.import_id
-            WHERE uv.import_id = %s
-              AND ut.table_name = 'TASK'
-        """, [import_id])
+      SELECT uv.fk_id AS task_id,
+             ut.udf_type_label,
+             uv.udf_text,
+             uv.udf_number,
+             uv.udf_date,
+             uv.udf_code_id
+      FROM p6_udfvalue uv
+      JOIN p6_udftype ut
+        ON ut.udf_type_id = uv.udf_type_id
+       AND ut.import_id   = uv.import_id
+      WHERE uv.import_id = %s
+        AND ut.table_name = 'TASK'
+    """, [import_id])
     for row in rows:
-      tid = row["task_id"]
+      tid   = row["task_id"]
       label = row.get("udf_type_label", "")
-      val = (str(row["udf_text"])   if row.get("udf_text")    else
-             str(row["udf_number"]) if row.get("udf_number") is not None else
-             str(row["udf_date"])   if row.get("udf_date")    else
-             str(row["udf_code_id"])if row.get("udf_code_id") else "")
+      val   = (str(row["udf_text"])    if row.get("udf_text")              else
+               str(row["udf_number"])  if row.get("udf_number") is not None else
+               str(row["udf_date"])    if row.get("udf_date")              else
+               str(row["udf_code_id"]) if row.get("udf_code_id")           else "")
       if tid not in udf_map:
         udf_map[tid] = {}
       udf_map[tid][label] = val
@@ -202,35 +202,35 @@ def _get_udf_map(conn, import_id):
 
 def _get_relationship_map(conn, import_id, cal_map):
   """
-    Build {task_id: {predecessors: [...], successors: [...]}} from TASKPRED.
-    Lag and float converted from hours to days using predecessor calendar.
-    """
+  Build {task_id: {predecessors: [...], successors: [...]}} from TASKPRED.
+  Lag and float converted from hours to days using predecessor calendar.
+  """
   rel_map = {}
   try:
     rows = _query(conn, """
-            SELECT tp.task_id      AS succ_task_id,
-                   tp.pred_task_id,
-                   tp.pred_type,
-                   tp.lag_hr_cnt,
-                   tp.float_path,
-                   t_pred.task_code AS pred_task_code,
-                   t_pred.task_name AS pred_task_name,
-                   t_pred.clndr_id  AS pred_clndr_id,
-                   t_succ.task_code AS succ_task_code,
-                   t_succ.task_name AS succ_task_name
-            FROM p6_taskpred tp
-            JOIN p6_task t_pred
-              ON t_pred.task_id   = tp.pred_task_id
-             AND t_pred.import_id = tp.import_id
-            JOIN p6_task t_succ
-              ON t_succ.task_id   = tp.task_id
-             AND t_succ.import_id = tp.import_id
-            WHERE tp.import_id = %s
-        """, [import_id])
+      SELECT tp.task_id      AS succ_task_id,
+             tp.pred_task_id,
+             tp.pred_type,
+             tp.lag_hr_cnt,
+             tp.float_path,
+             t_pred.task_code AS pred_task_code,
+             t_pred.task_name AS pred_task_name,
+             t_pred.clndr_id  AS pred_clndr_id,
+             t_succ.task_code AS succ_task_code,
+             t_succ.task_name AS succ_task_name
+      FROM p6_taskpred tp
+      JOIN p6_task t_pred
+        ON t_pred.task_id   = tp.pred_task_id
+       AND t_pred.import_id = tp.import_id
+      JOIN p6_task t_succ
+        ON t_succ.task_id   = tp.task_id
+       AND t_succ.import_id = tp.import_id
+      WHERE tp.import_id = %s
+    """, [import_id])
 
     for row in rows:
-      succ_id = row["succ_task_id"]
-      pred_id = row["pred_task_id"]
+      succ_id  = row["succ_task_id"]
+      pred_id  = row["pred_task_id"]
       raw_type = row.get("pred_type") or ""
       rel_type = raw_type.replace("PR_", "") if raw_type.startswith("PR_") else raw_type
       hrs_per_day = cal_map.get(row.get("pred_clndr_id", ""), 8.0)
@@ -246,20 +246,20 @@ def _get_relationship_map(conn, import_id, cal_map):
       is_driving  = (rel_ff_days == 0)
 
       pred_entry = {
-        "task_id":    pred_id,
-        "task_code":  row.get("pred_task_code", ""),
-        "task_name":  row.get("pred_task_name", ""),
-        "rel_type":   rel_type,
-        "lag_days":   lag_days,
-        "driving":    is_driving
+        "task_id":   pred_id,
+        "task_code": row.get("pred_task_code", ""),
+        "task_name": row.get("pred_task_name", ""),
+        "rel_type":  rel_type,
+        "lag_days":  lag_days,
+        "driving":   is_driving,
       }
       succ_entry = {
-        "task_id":    succ_id,
-        "task_code":  row.get("succ_task_code", ""),
-        "task_name":  row.get("succ_task_name", ""),
-        "rel_type":   rel_type,
-        "lag_days":   lag_days,
-        "driving":    is_driving
+        "task_id":   succ_id,
+        "task_code": row.get("succ_task_code", ""),
+        "task_name": row.get("succ_task_name", ""),
+        "rel_type":  rel_type,
+        "lag_days":  lag_days,
+        "driving":   is_driving,
       }
 
       if succ_id not in rel_map:
@@ -277,26 +277,26 @@ def _get_relationship_map(conn, import_id, cal_map):
 
 def _get_code_detail_map(conn, import_id):
   """
-    Build {task_id: [[type_name, value_name, description], ...]}
-    for the Codes tab of the activity details pane.
-    """
+  Build {task_id: [[type_name, value_name, description], ...]}
+  for the Codes tab of the activity details pane.
+  """
   detail_map = {}
   try:
     rows = _query(conn, """
-            SELECT ta.task_id,
-                   at2.actv_code_type AS type_name,
-                   ac.short_name      AS value_name,
-                   ac.actv_code_name  AS description
-            FROM p6_taskactv ta
-            JOIN p6_actvcode ac
-              ON ac.actv_code_id    = ta.actv_code_id
-             AND ac.import_id       = ta.import_id
-            JOIN p6_actvtype at2
-              ON at2.actv_code_type_id = ac.actv_code_type_id
-             AND at2.import_id         = ta.import_id
-            WHERE ta.import_id = %s
-            ORDER BY at2.actv_code_type
-        """, [import_id])
+      SELECT ta.task_id,
+             at2.actv_code_type AS type_name,
+             ac.short_name      AS value_name,
+             ac.actv_code_name  AS description
+      FROM p6_taskactv ta
+      JOIN p6_actvcode ac
+        ON ac.actv_code_id    = ta.actv_code_id
+       AND ac.import_id       = ta.import_id
+      JOIN p6_actvtype at2
+        ON at2.actv_code_type_id = ac.actv_code_type_id
+       AND at2.import_id         = ta.import_id
+      WHERE ta.import_id = %s
+      ORDER BY at2.actv_code_type
+    """, [import_id])
     for row in rows:
       tid = row["task_id"]
       if tid not in detail_map:
@@ -304,7 +304,7 @@ def _get_code_detail_map(conn, import_id):
       detail_map[tid].append([
         row.get("type_name", ""),
         row.get("value_name", ""),
-        row.get("description", "")
+        row.get("description", ""),
       ])
   except Exception:
     pass
@@ -313,28 +313,28 @@ def _get_code_detail_map(conn, import_id):
 
 def _get_notebook_map(conn, import_id):
   """
-    Build {task_id: [[topic_name, plain_text_content], ...]}
-    for the Notebook tab. Strips HTML tags from content.
-    """
+  Build {task_id: [[topic_name, plain_text_content], ...]}
+  for the Notebook tab. Strips HTML tags from content.
+  """
   nb_map = {}
   try:
     rows = _query(conn, """
-            SELECT tm.task_id,
-                   COALESCE(mt.memo_type, tm.memo_type_id) AS topic_name,
-                   tm.task_memo AS content
-            FROM p6_taskmemo tm
-            LEFT JOIN p6_memotype mt
-              ON mt.memo_type_id = tm.memo_type_id
-             AND mt.import_id    = tm.import_id
-            WHERE tm.import_id = %s
-        """, [import_id])
+      SELECT tm.task_id,
+             COALESCE(mt.memo_type, tm.memo_type_id) AS topic_name,
+             tm.task_memo AS content
+      FROM p6_taskmemo tm
+      LEFT JOIN p6_memotype mt
+        ON mt.memo_type_id = tm.memo_type_id
+       AND mt.import_id    = tm.import_id
+      WHERE tm.import_id = %s
+    """, [import_id])
     for row in rows:
       tid = row["task_id"]
       if tid not in nb_map:
         nb_map[tid] = []
       nb_map[tid].append([
         row.get("topic_name", ""),
-        _strip_html(row.get("content", "") or "")
+        _strip_html(row.get("content", "") or ""),
       ])
   except Exception:
     pass
@@ -346,10 +346,10 @@ def _strip_html(html_str):
   if not html_str:
     return ""
   s = (html_str
-    .replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+    .replace("&amp;",  "&").replace("&lt;",   "<").replace("&gt;",  ">")
     .replace("&nbsp;", " ").replace("&quot;", '"')
-    .replace("<br>", "\n").replace("<br/>", "\n").replace("<br />", "\n")
-    .replace("<p>", "\n").replace("</p>", ""))
+    .replace("<br>",  "\n").replace("<br/>", "\n").replace("<br />", "\n")
+    .replace("<p>",   "\n").replace("</p>",   ""))
   result = []
   in_tag = False
   for ch in s:
@@ -364,27 +364,27 @@ def _strip_html(html_str):
 
 def _get_udf_detail_map(conn, import_id):
   """
-    Build {task_id: [[udf_label, display_value], ...]}
-    for the UDFs tab. Handles all P6 UDF data types.
-    """
+  Build {task_id: [[udf_label, display_value], ...]}
+  for the UDFs tab. Handles all P6 UDF data types.
+  """
   detail_map = {}
   try:
     rows = _query(conn, """
-            SELECT uv.fk_id AS task_id,
-                   ut.udf_type_label,
-                   ut.logical_data_type,
-                   uv.udf_text,
-                   uv.udf_number,
-                   uv.udf_date,
-                   uv.udf_code_id
-            FROM p6_udfvalue uv
-            JOIN p6_udftype ut
-              ON ut.udf_type_id = uv.udf_type_id
-             AND ut.import_id   = uv.import_id
-            WHERE uv.import_id = %s
-              AND ut.table_name = 'TASK'
-            ORDER BY ut.udf_type_label
-        """, [import_id])
+      SELECT uv.fk_id AS task_id,
+             ut.udf_type_label,
+             ut.logical_data_type,
+             uv.udf_text,
+             uv.udf_number,
+             uv.udf_date,
+             uv.udf_code_id
+      FROM p6_udfvalue uv
+      JOIN p6_udftype ut
+        ON ut.udf_type_id = uv.udf_type_id
+       AND ut.import_id   = uv.import_id
+      WHERE uv.import_id = %s
+        AND ut.table_name = 'TASK'
+      ORDER BY ut.udf_type_label
+    """, [import_id])
     for row in rows:
       tid   = row["task_id"]
       label = row.get("udf_type_label", "")
@@ -398,8 +398,8 @@ def _get_udf_detail_map(conn, import_id):
       elif "CODE" in dtype:
         val = str(row.get("udf_code_id") or "")
       else:
-        val = str(row.get("udf_text") or row.get("udf_number") or
-                  row.get("udf_date") or row.get("udf_code_id") or "")
+        val = str(row.get("udf_text")    or row.get("udf_number") or
+                  row.get("udf_date")    or row.get("udf_code_id") or "")
       if tid not in detail_map:
         detail_map[tid] = []
       detail_map[tid].append([label, val])
@@ -410,29 +410,29 @@ def _get_udf_detail_map(conn, import_id):
 
 def _get_task_detail_map(conn, import_id, cal_map):
   """
-    Build {task_id: {field: value}} with extended fields for General/Status tabs.
-    Includes calendar name, duration type, percent complete, all dates, float values.
-    """
+  Build {task_id: {field: value}} with extended fields for General/Status tabs.
+  Includes calendar name, duration type, percent complete, all dates, float values.
+  """
   detail_map = {}
   try:
     rows = _query(conn, """
-            SELECT t.task_id, t.clndr_id, c.clndr_name,
-                   t.task_type, t.duration_type, t.complete_pct_type,
-                   t.phys_complete_pct,
-                   t.target_drtn_hr_cnt, t.act_drtn_hr_cnt,
-                   t.remain_drtn_hr_cnt, t.at_comp_drtn_hr_cnt,
-                   t.total_float_hr_cnt, t.free_float_hr_cnt,
-                   t.target_start_date, t.target_end_date,
-                   t.act_start_date,    t.act_end_date,
-                   t.early_start_date,  t.early_end_date,
-                   t.late_start_date,   t.late_end_date,
-                   t.status_code
-            FROM p6_task t
-            LEFT JOIN p6_calendar c
-              ON c.clndr_id  = t.clndr_id
-             AND c.import_id = t.import_id
-            WHERE t.import_id = %s
-        """, [import_id])
+      SELECT t.task_id, t.clndr_id, c.clndr_name,
+             t.task_type, t.duration_type, t.complete_pct_type,
+             t.phys_complete_pct,
+             t.target_drtn_hr_cnt, t.act_drtn_hr_cnt,
+             t.remain_drtn_hr_cnt, t.at_comp_drtn_hr_cnt,
+             t.total_float_hr_cnt, t.free_float_hr_cnt,
+             t.target_start_date, t.target_end_date,
+             t.act_start_date,    t.act_end_date,
+             t.early_start_date,  t.early_end_date,
+             t.late_start_date,   t.late_end_date,
+             t.status_code
+      FROM p6_task t
+      LEFT JOIN p6_calendar c
+        ON c.clndr_id  = t.clndr_id
+       AND c.import_id = t.import_id
+      WHERE t.import_id = %s
+    """, [import_id])
 
     def _hrs_to_days(hrs, hpd):
       try:
@@ -441,38 +441,38 @@ def _get_task_detail_map(conn, import_id, cal_map):
         return None
 
     for row in rows:
-      tid = row["task_id"]
-      hpd = cal_map.get(row.get("clndr_id", ""), 8.0)
+      tid        = row["task_id"]
+      hpd        = cal_map.get(row.get("clndr_id", ""), 8.0)
       act_start  = row.get("act_start_date")
       act_finish = row.get("act_end_date")
-      start  = act_start  or row.get("early_start_date") or row.get("target_start_date")
-      finish = act_finish or row.get("early_end_date")   or row.get("target_end_date")
+      start      = act_start  or row.get("early_start_date") or row.get("target_start_date")
+      finish     = act_finish or row.get("early_end_date")   or row.get("target_end_date")
 
       detail_map[tid] = {
-        "calendar_name":      row.get("clndr_name", ""),
-        "task_type":          _format_task_type(row.get("task_type", "")),
-        "duration_type":      _format_duration_type(row.get("duration_type", "")),
-        "complete_pct_type":  _format_pct_type(row.get("complete_pct_type", "")),
-        "phys_complete_pct":  row.get("phys_complete_pct"),
-        "orig_dur_days":      _hrs_to_days(row.get("target_drtn_hr_cnt"), hpd),
-        "act_dur_days":       _hrs_to_days(row.get("act_drtn_hr_cnt"), hpd),
-        "rem_dur_days":       _hrs_to_days(row.get("remain_drtn_hr_cnt"), hpd),
-        "at_comp_dur_days":   _hrs_to_days(row.get("at_comp_drtn_hr_cnt"), hpd),
-        "total_float_days":   _hrs_to_days(row.get("total_float_hr_cnt"), hpd),
-        "free_float_days":    _hrs_to_days(row.get("free_float_hr_cnt"), hpd),
-        "start_date":         str(start)      if start      else "",
-        "finish_date":        str(finish)     if finish     else "",
-        "act_start_date":     str(act_start)  if act_start  else "",
-        "act_end_date":       str(act_finish) if act_finish else "",
-        "target_start_date":  str(row.get("target_start_date") or ""),
-        "target_end_date":    str(row.get("target_end_date")   or ""),
-        "early_start_date":   str(row.get("early_start_date")  or ""),
-        "early_end_date":     str(row.get("early_end_date")    or ""),
-        "late_start_date":    str(row.get("late_start_date")   or ""),
-        "late_end_date":      str(row.get("late_end_date")     or ""),
-        "has_actual_start":   bool(act_start),
-        "has_actual_finish":  bool(act_finish),
-        "status_code":        row.get("status_code", ""),
+        "calendar_name":     row.get("clndr_name", ""),
+        "task_type":         _format_task_type(row.get("task_type", "")),
+        "duration_type":     _format_duration_type(row.get("duration_type", "")),
+        "complete_pct_type": _format_pct_type(row.get("complete_pct_type", "")),
+        "phys_complete_pct": row.get("phys_complete_pct"),
+        "orig_dur_days":     _hrs_to_days(row.get("target_drtn_hr_cnt"), hpd),
+        "act_dur_days":      _hrs_to_days(row.get("act_drtn_hr_cnt"),    hpd),
+        "rem_dur_days":      _hrs_to_days(row.get("remain_drtn_hr_cnt"), hpd),
+        "at_comp_dur_days":  _hrs_to_days(row.get("at_comp_drtn_hr_cnt"), hpd),
+        "total_float_days":  _hrs_to_days(row.get("total_float_hr_cnt"), hpd),
+        "free_float_days":   _hrs_to_days(row.get("free_float_hr_cnt"),  hpd),
+        "start_date":        str(start)      if start      else "",
+        "finish_date":       str(finish)     if finish     else "",
+        "act_start_date":    str(act_start)  if act_start  else "",
+        "act_end_date":      str(act_finish) if act_finish else "",
+        "target_start_date": str(row.get("target_start_date") or ""),
+        "target_end_date":   str(row.get("target_end_date")   or ""),
+        "early_start_date":  str(row.get("early_start_date")  or ""),
+        "early_end_date":    str(row.get("early_end_date")    or ""),
+        "late_start_date":   str(row.get("late_start_date")   or ""),
+        "late_end_date":     str(row.get("late_end_date")     or ""),
+        "has_actual_start":  bool(act_start),
+        "has_actual_finish": bool(act_finish),
+        "status_code":       row.get("status_code", ""),
       }
   except Exception:
     pass
@@ -481,26 +481,33 @@ def _get_task_detail_map(conn, import_id, cal_map):
 
 def _format_task_type(code):
   mapping = {
-    "TT_Task": "Task Dependent", "TT_Rsrc": "Resource Dependent",
-    "TT_Mile": "Start Milestone", "TT_LOE": "Level of Effort",
-    "TT_FinMile": "Finish Milestone", "TT_StartMile": "Start Milestone",
-    "TT_WBS": "WBS Summary",
+    "TT_Task":      "Task Dependent",
+    "TT_Rsrc":      "Resource Dependent",
+    "TT_Mile":      "Start Milestone",
+    "TT_LOE":       "Level of Effort",
+    "TT_FinMile":   "Finish Milestone",
+    "TT_StartMile": "Start Milestone",
+    "TT_WBS":       "WBS Summary",
   }
   return mapping.get(code, code or "")
 
 
 def _format_duration_type(code):
   mapping = {
-    "DT_FixedDUR": "Fixed Duration & Units",
+    "DT_FixedDUR":  "Fixed Duration & Units",
     "DT_FixedDrtn": "Fixed Duration & Units/Time",
     "DT_FixedRate": "Fixed Units/Time",
-    "DT_FixedQty": "Fixed Units",
+    "DT_FixedQty":  "Fixed Units",
   }
   return mapping.get(code, code or "")
 
 
 def _format_pct_type(code):
-  mapping = {"CP_Drtn": "Duration", "CP_Units": "Units", "CP_Phys": "Physical"}
+  mapping = {
+    "CP_Drtn":  "Duration",
+    "CP_Units": "Units",
+    "CP_Phys":  "Physical",
+  }
   return mapping.get(code, code or "")
 
 
@@ -510,18 +517,18 @@ def _format_pct_type(code):
 
 def _build_wbs_tree(conn, import_id, proj_id):
   """
-    Query p6_projwbs and build a hierarchical tree.
-    Root identified by proj_node_flag = 'Y'.
-    Children sorted by seq_num at every level.
-    Returns (root_node, all_nodes_dict).
-    """
+  Query p6_projwbs and build a hierarchical tree.
+  Root identified by proj_node_flag = 'Y'.
+  Children sorted by seq_num at every level.
+  Returns (root_node, all_nodes_dict).
+  """
   rows = _query(conn, """
-        SELECT wbs_id, parent_wbs_id, wbs_short_name, wbs_name,
-               seq_num, proj_node_flag
-        FROM p6_projwbs
-        WHERE import_id = %s AND proj_id = %s
-        ORDER BY seq_num
-    """, [import_id, proj_id])
+    SELECT wbs_id, parent_wbs_id, wbs_short_name, wbs_name,
+           seq_num, proj_node_flag
+    FROM p6_projwbs
+    WHERE import_id = %s AND proj_id = %s
+    ORDER BY seq_num
+  """, [import_id, proj_id])
 
   nodes = {}
   root  = None
@@ -535,7 +542,7 @@ def _build_wbs_tree(conn, import_id, proj_id):
       "wbs_name":       row.get("wbs_name", ""),
       "seq_num":        row.get("seq_num", 0),
       "proj_node_flag": row.get("proj_node_flag", "N"),
-      "children":       []
+      "children":       [],
     }
     if row.get("proj_node_flag") == "Y":
       root = nodes[wbs_id]
@@ -559,11 +566,17 @@ def _build_wbs_tree(conn, import_id, proj_id):
 def _traverse_wbs(node, tasks_by_wbs, columns, code_map, udf_map,
                   cal_map, depth=0):
   """
-    Depth-first WBS traversal producing rows in display order.
-    Each entry: (row_data_list, row_type, indent_level, task_id)
-    row_type is "WBS", "TASK", or "BLANK".
-    """
+  Depth-first WBS traversal producing rows in display order.
+  Each entry is a 6-tuple:
+    (row_data, row_type, indent_level, task_id, wbs_id, parent_wbs_id)
+  row_type is 'WBS', 'TASK', or 'BLANK'.
+  wbs_id and parent_wbs_id are included for every row so the client
+  can map each row to its WBS node for collapse/expand logic.
+  """
   result_rows = []
+
+  node_wbs_id        = str(node.get("wbs_id", ""))
+  node_parent_wbs_id = str(node.get("parent_wbs_id", "") or "")
 
   # Emit WBS summary row (skip root at depth 0)
   if depth > 0:
@@ -575,17 +588,27 @@ def _traverse_wbs(node, tasks_by_wbs, columns, code_map, udf_map,
         wbs_row.append(node.get("wbs_name", ""))
       else:
         wbs_row.append("")
-    result_rows.append((wbs_row, "WBS", depth, ""))
+    result_rows.append((
+      wbs_row, "WBS", depth, "",
+      node_wbs_id, node_parent_wbs_id
+    ))
 
-    # Emit task rows under this WBS node
+  # Emit task rows under this WBS node
   task_indent = depth + 1 if depth > 0 else 1
   for task in tasks_by_wbs.get(node["wbs_id"], []):
     task_row = _build_task_row(task, columns, code_map, udf_map, cal_map)
-    tid = str(task.get("task_id", ""))
-    result_rows.append((task_row, "TASK", task_indent, tid))
-    result_rows.append(([""] * len(columns), "BLANK", task_indent, ""))
+    tid      = str(task.get("task_id", ""))
+    result_rows.append((
+      task_row, "TASK", task_indent, tid,
+      node_wbs_id, node_parent_wbs_id
+    ))
+    # BLANK spacer row (filtered out client-side, kept here for baseline bar space)
+    result_rows.append((
+      [""] * len(columns), "BLANK", task_indent, "",
+      node_wbs_id, node_parent_wbs_id
+    ))
 
-    # Recurse into children
+  # Recurse into children
   for child in node.get("children", []):
     result_rows.extend(
       _traverse_wbs(child, tasks_by_wbs, columns,
@@ -597,10 +620,10 @@ def _traverse_wbs(node, tasks_by_wbs, columns, code_map, udf_map,
 
 def _build_task_row(task, columns, code_map, udf_map, cal_map):
   """
-    Build one task's data row from the column configuration.
-    Handles TASK, CALC, ACTVCODE, and UDF source types.
-    Duration fields converted from hours to days.
-    """
+  Build one task's data row from the column configuration.
+  Handles TASK, CALC, ACTVCODE, and UDF source types.
+  Duration fields converted from hours to days.
+  """
   tid    = task.get("task_id", "")
   cal_id = task.get("clndr_id", "")
   hpd    = cal_map.get(cal_id, 8.0)
@@ -630,11 +653,11 @@ def _build_task_row(task, columns, code_map, udf_map, cal_map):
 
     elif source == "CALC":
       if field == "start_date":
-        val = _format_date(disp_start) if disp_start else ""
+        val = _format_date(disp_start)  if disp_start  else ""
       elif field == "finish_date":
         val = _format_date(disp_finish) if disp_finish else ""
       elif field == "actual_start_flag":
-        val = "Y" if act_start else ""
+        val = "Y" if act_start  else ""
       elif field == "actual_finish_flag":
         val = "Y" if act_finish else ""
 
@@ -651,34 +674,34 @@ def _build_task_row(task, columns, code_map, udf_map, cal_map):
 
 # ===========================================================================
 #  CALLABLE: get_gantt_data
-#  Main data endpoint called by MainForm._load_gantt()
+#  Main data endpoint called by GanttForm._load_gantt()
 # ===========================================================================
 
 @anvil.server.callable
 def get_gantt_data(token, project_id, import_id,
                    column_config=None, near_critical_days=10, cols_per_week=7):
   """
-    Get the full Gantt dataset for a project/import.
+  Get the full Gantt dataset for a project/import.
 
-    Returns a dict with:
-      tasks:              list of task dicts (row data + metadata)
-      columns:            column config used
-      timescale_start:    ISO date string
-      timescale_end:      ISO date string
-      data_date:          ISO date string
-      bar_col_count:      total bar columns
-      cols_per_week:      columns per calendar week
-      detail_cache:       {task_id: {general, status, codes, relationships,
-                                     notebook, udfs}} for instant detail pane
+  Returns a dict with:
+    tasks:            list of task dicts (row data + metadata)
+    columns:          column config used
+    timescale_start:  ISO date string
+    timescale_end:    ISO date string
+    data_date:        ISO date string
+    bar_col_count:    total bar columns
+    cols_per_week:    columns per calendar week
+    detail_cache:     {task_id: {general, status, codes, relationships,
+                                 notebook, udfs}} for instant detail pane
 
-    Args:
-      token:               session token
-      project_id:          app-level project_id from project table
-      import_id:           import_log.import_id
-      column_config:       optional list of column dicts; uses defaults if None
-      near_critical_days:  float threshold days for near-critical highlight
-      cols_per_week:       bar chart columns per calendar week
-    """
+  Args:
+    token:               session token
+    project_id:          app-level project_id from project table
+    import_id:           import_log.import_id
+    column_config:       optional list of column dicts; uses defaults if None
+    near_critical_days:  float threshold days for near-critical highlight
+    cols_per_week:       bar chart columns per calendar week
+  """
   user = auth.validate_session(token)
   if not user:
     raise Exception("Invalid or expired session. Please log in again.")
@@ -689,17 +712,17 @@ def get_gantt_data(token, project_id, import_id,
   try:
     # -- Get P6 project info --
     proj_rows = _query(conn, """
-            SELECT proj_id, critical_path_type, critical_drtn_hr_cnt,
-                   last_recalc_date
-            FROM p6_project WHERE import_id = %s LIMIT 1
-        """, [import_id])
+      SELECT proj_id, critical_path_type, critical_drtn_hr_cnt,
+             last_recalc_date
+      FROM p6_project WHERE import_id = %s LIMIT 1
+    """, [import_id])
 
     if not proj_rows:
       raise Exception("No P6 project found for this import.")
 
-    proj        = proj_rows[0]
-    p6_proj_id  = proj["proj_id"]
-    crit_type   = proj.get("critical_path_type", "CT_TotFloat")
+    proj       = proj_rows[0]
+    p6_proj_id = proj["proj_id"]
+    crit_type  = proj.get("critical_path_type", "CT_TotFloat")
     try:
       crit_hrs = float(proj.get("critical_drtn_hr_cnt") or 0)
     except (ValueError, TypeError):
@@ -716,12 +739,12 @@ def get_gantt_data(token, project_id, import_id,
     if not root:
       raise Exception("No WBS hierarchy found for this project.")
 
-      # -- Load all tasks, index by wbs_id and task_id --
+    # -- Load all tasks, index by wbs_id and task_id --
     task_rows = _query(conn, """
-            SELECT * FROM p6_task
-            WHERE import_id = %s AND proj_id = %s
-            ORDER BY task_code
-        """, [import_id, p6_proj_id])
+      SELECT * FROM p6_task
+      WHERE import_id = %s AND proj_id = %s
+      ORDER BY task_code
+    """, [import_id, p6_proj_id])
 
     tasks_by_wbs = {}
     task_lookup  = {}
@@ -732,7 +755,7 @@ def get_gantt_data(token, project_id, import_id,
       tasks_by_wbs[wbs_id].append(t)
       task_lookup[str(t.get("task_id", ""))] = t
 
-      # -- Traverse WBS tree into ordered rows --
+    # -- Traverse WBS tree into ordered rows --
     traversal = _traverse_wbs(root, tasks_by_wbs, columns,
                               code_map, udf_map, cal_map)
 
@@ -740,20 +763,25 @@ def get_gantt_data(token, project_id, import_id,
     row_types      = []
     indent_levels  = []
     task_ids       = []
-    for (row_data, rtype, indent, tid) in traversal:
+    task_ids_wbs   = []
+    parent_wbs_ids = []
+
+    for (row_data, rtype, indent, tid, wbs_id, parent_wbs_id) in traversal:
       row_data_list.append(row_data)
       row_types.append(rtype)
       indent_levels.append(indent)
       task_ids.append(tid)
+      task_ids_wbs.append(wbs_id)
+      parent_wbs_ids.append(parent_wbs_id)
 
-      # -- Timescale date range from SQL (avoids Python date parsing loop) --
+    # -- Timescale date range from SQL (avoids Python date parsing loop) --
     dr = _query(conn, """
-            SELECT LEAST(MIN(act_start_date), MIN(early_start_date),
-                         MIN(target_start_date), MIN(restart_date)) AS earliest,
-                   GREATEST(MAX(act_end_date), MAX(early_end_date),
-                            MAX(target_end_date), MAX(reend_date))  AS latest
-            FROM p6_task WHERE import_id = %s AND proj_id = %s
-        """, [import_id, p6_proj_id])
+      SELECT LEAST(MIN(act_start_date), MIN(early_start_date),
+                   MIN(target_start_date), MIN(restart_date)) AS earliest,
+             GREATEST(MAX(act_end_date), MAX(early_end_date),
+                      MAX(target_end_date), MAX(reend_date))  AS latest
+      FROM p6_task WHERE import_id = %s AND proj_id = %s
+    """, [import_id, p6_proj_id])
 
     earliest = _to_native_date(dr[0].get("earliest")) if dr else None
     latest   = _to_native_date(dr[0].get("latest"))   if dr else None
@@ -788,7 +816,7 @@ def get_gantt_data(token, project_id, import_id,
     milestone_types = {"TT_Mile", "TT_FinMile", "TT_StartMile"}
 
     def _remaining_code(task):
-      """Return bar color code: 1=actual, 2=normal, 3=near-critical, 4=critical."""
+      """Return bar colour code: 1=actual, 2=normal, 3=near-critical, 4=critical."""
       if crit_type == "CT_DrivPath":
         if task.get("driving_path_flag") == "Y":
           return 4
@@ -804,11 +832,11 @@ def get_gantt_data(token, project_id, import_id,
         tf_hrs = float(task.get("total_float_hr_cnt") or 0)
       except (ValueError, TypeError):
         tf_hrs = 0
-      hpd = cal_map.get(task.get("clndr_id", ""), 8.0)
+      hpd     = cal_map.get(task.get("clndr_id", ""), 8.0)
       tf_days = tf_hrs / hpd if hpd > 0 else 0
       return 3 if tf_days <= near_critical_days else 2
 
-      # -- Build bar segments per row --
+    # -- Build bar segments per row --
     bar_segments = []
     for idx, tid in enumerate(task_ids):
       rtype = row_types[idx]
@@ -821,22 +849,22 @@ def get_gantt_data(token, project_id, import_id,
       task_type = task.get("task_type", "")
       is_ms     = task_type in milestone_types
 
-      act_start  = _to_native_date(task.get("act_start_date"))
-      act_end    = _to_native_date(task.get("act_end_date"))
-      restart    = _to_native_date(task.get("restart_date"))
-      reend      = _to_native_date(task.get("reend_date"))
+      act_start   = _to_native_date(task.get("act_start_date"))
+      act_end     = _to_native_date(task.get("act_end_date"))
+      restart     = _to_native_date(task.get("restart_date"))
+      reend       = _to_native_date(task.get("reend_date"))
       early_start = _to_native_date(task.get("early_start_date"))
       early_end   = _to_native_date(task.get("early_end_date"))
       tgt_start   = _to_native_date(task.get("target_start_date"))
       tgt_end     = _to_native_date(task.get("target_end_date"))
 
-      segs      = []
-      last_col  = -1
-      rem_code  = _remaining_code(task)
+      segs     = []
+      last_col = -1
+      rem_code = _remaining_code(task)
 
       if is_ms:
         ms_date = act_end or act_start or restart or early_start or tgt_start
-        col = _date_to_col(ms_date)
+        col     = _date_to_col(ms_date)
         if col is not None and 0 <= col < total_bar_cols:
           code = 1 if act_end else rem_code
           segs.append({"type": f"M{code}", "start": col, "end": col})
@@ -853,10 +881,10 @@ def get_gantt_data(token, project_id, import_id,
               segs.append({"type": "1", "start": c_s, "end": c_e})
               last_col = max(last_col, c_e)
 
-              # Remaining/forecast portion
+        # Remaining/forecast portion
         if not act_end:
-          rem_start = restart or early_start or tgt_start
-          rem_end   = reend   or early_end   or tgt_end
+          rem_start = restart    or early_start or tgt_start
+          rem_end   = reend      or early_end   or tgt_end
           if rem_start and rem_end:
             r_s = _date_to_col(rem_start)
             r_e = _date_to_col(rem_end)
@@ -867,7 +895,7 @@ def get_gantt_data(token, project_id, import_id,
                 segs.append({"type": str(rem_code), "start": c_s, "end": c_e})
                 last_col = max(last_col, c_e)
 
-            # Activity name label after bar
+      # Activity name label after bar
       if last_col >= 0:
         label_col = last_col + 2
         if label_col < total_bar_cols:
@@ -875,7 +903,7 @@ def get_gantt_data(token, project_id, import_id,
 
       bar_segments.append(segs)
 
-      # -- Build detail cache for activity details pane --
+    # -- Build detail cache for activity details pane --
     rel_map         = _get_relationship_map(conn, import_id, cal_map)
     code_detail_map = _get_code_detail_map(conn, import_id)
     nb_map          = _get_notebook_map(conn, import_id)
@@ -892,26 +920,28 @@ def get_gantt_data(token, project_id, import_id,
         "udfs":          udf_detail_map.get(tid, []),
       }
 
-      # -- Build task list for client --
+    # -- Build task list for client --
     tasks_out = []
     for idx, tid in enumerate(task_ids):
       tasks_out.append({
-        "task_id":     tid,
-        "row_type":    row_types[idx],
-        "indent":      indent_levels[idx],
-        "row_data":    row_data_list[idx],
-        "bar_segments": bar_segments[idx],
+        "task_id":       tid,
+        "row_type":      row_types[idx],
+        "indent":        indent_levels[idx],
+        "row_data":      row_data_list[idx],
+        "bar_segments":  bar_segments[idx],
+        "wbs_id":        task_ids_wbs[idx],
+        "parent_wbs_id": parent_wbs_ids[idx],
       })
 
     return {
-      "tasks":            tasks_out,
-      "columns":          columns,
-      "timescale_start":  ts_start.isoformat(),
-      "timescale_end":    ts_end.isoformat(),
-      "data_date":        data_date.isoformat() if data_date else "",
-      "bar_col_count":    total_bar_cols,
-      "cols_per_week":    cols_per_week,
-      "detail_cache":     detail_cache,
+      "tasks":           tasks_out,
+      "columns":         columns,
+      "timescale_start": ts_start.isoformat(),
+      "timescale_end":   ts_end.isoformat(),
+      "data_date":       data_date.isoformat() if data_date else "",
+      "bar_col_count":   total_bar_cols,
+      "cols_per_week":   cols_per_week,
+      "detail_cache":    detail_cache,
     }
 
   finally:
@@ -925,11 +955,11 @@ def get_gantt_data(token, project_id, import_id,
 @anvil.server.callable
 def get_user_projects(token):
   """
-    Returns list of projects the user has access to.
-    Superusers see all projects. Others see projects via OBS rights.
+  Returns list of projects the user has access to.
+  Superusers see all projects. Others see projects via OBS rights.
 
-    Returns: list of dicts [{project_id, project_name, description}]
-    """
+  Returns: list of dicts [{project_id, project_name, description}]
+  """
   user = auth.validate_session(token)
   if not user:
     raise Exception("Invalid session. Please log in again.")
@@ -937,18 +967,18 @@ def get_user_projects(token):
   try:
     if user["is_superuser"]:
       rows = db.query("""
-                SELECT project_id, project_name, description
-                FROM project ORDER BY project_name
-            """)
+        SELECT project_id, project_name, description
+        FROM project ORDER BY project_name
+      """)
     else:
       rows = db.query("""
-                SELECT DISTINCT p.project_id, p.project_name, p.description
-                FROM project p
-                JOIN obs o       ON p.obs_id    = o.obs_id
-                JOIN obs_right r ON r.obs_id     = o.obs_id
-                WHERE r.user_id = %s
-                ORDER BY p.project_name
-            """, [user["user_id"]])
+        SELECT DISTINCT p.project_id, p.project_name, p.description
+        FROM project p
+        JOIN obs o       ON p.obs_id  = o.obs_id
+        JOIN obs_right r ON r.obs_id  = o.obs_id
+        WHERE r.user_id = %s
+        ORDER BY p.project_name
+      """, [user["user_id"]])
     return [dict(r) for r in rows]
 
   except Exception as e:
@@ -963,25 +993,25 @@ def get_user_projects(token):
 @anvil.server.callable
 def get_project_imports(token, project_id):
   """
-    Returns list of imports for a project, newest first.
+  Returns list of imports for a project, newest first.
 
-    Returns: list of dicts [{import_id, label, file_name,
-                              import_date, data_date, import_status}]
-    """
+  Returns: list of dicts [{import_id, label, file_name,
+                            import_date, data_date, import_status}]
+  """
   user = auth.validate_session(token)
   if not user:
     raise Exception("Invalid session. Please log in again.")
 
   try:
     rows = db.query("""
-            SELECT import_id, label, file_name,
-                   import_date::date AS import_date,
-                   data_date::date   AS data_date,
-                   import_status
-            FROM import_log
-            WHERE project_id = %s
-            ORDER BY import_date DESC
-        """, [project_id])
+      SELECT import_id, label, file_name,
+             import_date::date AS import_date,
+             data_date::date   AS data_date,
+             import_status
+      FROM import_log
+      WHERE project_id = %s
+      ORDER BY import_date DESC
+    """, [project_id])
     return [dict(r) for r in rows]
 
   except Exception as e:
@@ -996,25 +1026,25 @@ def get_project_imports(token, project_id):
 @anvil.server.callable
 def get_actcode_values(token, import_id, actv_code_type_id):
   """
-    Returns activity code values for a given code type and import.
-    Used by the filter panel activity code value dropdown.
+  Returns activity code values for a given code type and import.
+  Used by the filter panel activity code value dropdown.
 
-    Returns: list of dicts [{actv_code_id, short_name, actv_code_name}]
-    """
+  Returns: list of dicts [{actv_code_id, short_name, actv_code_name}]
+  """
   user = auth.validate_session(token)
   if not user:
     raise Exception("Invalid session. Please log in again.")
 
   try:
     rows = db.query("""
-            SELECT DISTINCT ac.actv_code_id, ac.short_name, ac.actv_code_name
-            FROM p6_actvcode ac
-            JOIN p6_taskactv ta ON ta.actv_code_id = ac.actv_code_id
-            JOIN p6_task t      ON t.task_id       = ta.task_id
-            WHERE ac.actv_code_type_id = %s
-              AND t.import_id          = %s
-            ORDER BY ac.short_name
-        """, [actv_code_type_id, import_id])
+      SELECT DISTINCT ac.actv_code_id, ac.short_name, ac.actv_code_name
+      FROM p6_actvcode ac
+      JOIN p6_taskactv ta ON ta.actv_code_id = ac.actv_code_id
+      JOIN p6_task t      ON t.task_id       = ta.task_id
+      WHERE ac.actv_code_type_id = %s
+        AND t.import_id          = %s
+      ORDER BY ac.short_name
+    """, [actv_code_type_id, import_id])
     return [dict(r) for r in rows]
 
   except Exception as e:

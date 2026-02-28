@@ -140,6 +140,45 @@ def login(email, password):
     print(f"[auth.login] ERROR: {e}")
     return {"success": False, "message": f"Login error: {str(e)}"}
 
+@anvil.server.callable
+def validate_and_refresh_session(token):
+  """
+  Validate a saved session token from localStorage.
+  If valid, extends the expiry so active users stay logged in.
+  Called by LoginForm on startup to skip the login screen.
+
+  Args:
+    token: session token string from localStorage
+
+  Returns:
+    dict: {success: True, user: {...}} if valid
+    dict: {success: False} if invalid or expired
+  """
+  try:
+    user = validate_session(token)
+
+    if not user:
+      return {'success': False}
+
+    # Extend session expiry so active users don't get kicked out
+    timeout_setting = db.query_one(
+      "SELECT setting_value FROM app_setting "
+      "WHERE setting_key = 'session_timeout_hours'"
+    )
+    timeout_hours = int(timeout_setting['setting_value']) if timeout_setting else 24
+    new_expiry = datetime.utcnow() + timedelta(hours=timeout_hours)
+
+    db.execute(
+      "UPDATE user_session SET expires_at = %s WHERE token = %s",
+      [new_expiry, token]
+    )
+
+    return {'success': True, 'user': user}
+
+  except Exception as e:
+    print(f'[auth.validate_and_refresh_session] ERROR: {e}')
+    return {'success': False}
+    
 # ===========================================================================
 #  HTTP ENDPOINT HELPERS
 # ===========================================================================
