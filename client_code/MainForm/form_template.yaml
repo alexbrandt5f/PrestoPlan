@@ -1,10 +1,6 @@
 components:
 - components:
   - components:
-    - event_bindings: {}
-      name: btn_toggle_filters
-      properties: {text: ▶ Filters}
-      type: Button
     - name: lbl_project
       properties: {bold: true, foreground: '#1565c0', text: No project selected}
       type: Label
@@ -22,69 +18,90 @@ components:
     name: pnl_toolbar
     properties: {}
     type: FlowPanel
+
   - components:
     - components:
-      - name: lbl_filter_heading
-        properties: {bold: true, font_size: 14, text: Filters}
+      - name: lbl_sidebar_layout
+        properties: {bold: true, text: 'Layout:'}
         type: Label
-      - name: lbl_filter_status
-        properties: {bold: true, text: Status}
-        type: Label
-      - name: chk_not_started
-        properties: {checked: true, text: Not Started}
-        type: CheckBox
-      - name: chk_in_progress
-        properties: {checked: true, text: In Progress}
-        type: CheckBox
-      - name: chk_complete
-        properties: {checked: true, text: Complete}
-        type: CheckBox
-      - name: lbl_filter_criticality
-        properties: {bold: true, text: Criticality}
-        type: Label
-      - name: chk_critical
-        properties: {checked: true, text: Critical}
-        type: CheckBox
-      - name: chk_near_critical
-        properties: {checked: true, text: Near Critical}
-        type: CheckBox
-      - name: chk_non_critical
-        properties: {checked: true, text: Non Critical}
-        type: CheckBox
-      - name: lbl_filter_actcode
-        properties: {bold: true, text: Activity Code}
-        type: Label
-      - event_bindings: {}
-        name: dd_actcode_type
-        properties: {placeholder: Select code type...}
+      - name: dd_layout
+        properties: {placeholder: Default layout}
         type: DropDown
-      - name: dd_actcode_value
-        properties: {placeholder: Select value...}
+      - name: lbl_sidebar_filters
+        properties: {bold: true, text: 'Saved Filters:'}
+        type: Label
+      - name: dd_saved_filters
+        properties: {placeholder: No filter applied}
         type: DropDown
       - event_bindings: {}
-        name: btn_apply_filters
-        properties: {role: primary-color, text: Apply Filters}
+        name: btn_toggle_gfs
+        properties: {text: '▶ Grouping / Filtering / Sorting'}
         type: Button
-      - event_bindings: {}
-        name: btn_clear_filters
-        properties: {text: Clear Filters}
-        type: Button
-      name: pnl_filters
-      properties: {visible: false}
-      type: ColumnPanel
-    - components:
-      - name: lbl_no_data
-        properties: {align: center, font_size: 14, foreground: '#888888', text: Select a project and import to view the Gantt chart., visible: true}
-        type: Label
-      - name: plot_gantt
+      - components:
+        - name: lbl_filter_status
+          properties: {bold: true, text: Status}
+          type: Label
+        - name: chk_not_started
+          properties: {checked: true, text: Not Started}
+          type: CheckBox
+        - name: chk_in_progress
+          properties: {checked: true, text: In Progress}
+          type: CheckBox
+        - name: chk_complete
+          properties: {checked: true, text: Complete}
+          type: CheckBox
+        - name: lbl_filter_criticality
+          properties: {bold: true, text: Criticality}
+          type: Label
+        - name: chk_critical
+          properties: {checked: true, text: Critical}
+          type: CheckBox
+        - name: chk_near_critical
+          properties: {checked: true, text: Near Critical}
+          type: CheckBox
+        - name: chk_non_critical
+          properties: {checked: true, text: Non Critical}
+          type: CheckBox
+        - name: lbl_filter_actcode
+          properties: {bold: true, text: 'Activity Code:'}
+          type: Label
+        - event_bindings: {}
+          name: dd_actcode_type
+          properties: {placeholder: Select code type...}
+          type: DropDown
+        - name: dd_actcode_value
+          properties: {placeholder: Select value...}
+          type: DropDown
+        - event_bindings: {}
+          name: btn_apply_filters
+          properties: {role: primary-color, text: Apply Filters}
+          type: Button
+        - event_bindings: {}
+          name: btn_clear_filters
+          properties: {text: Clear Filters}
+          type: Button
+        name: pnl_gfs
         properties: {visible: false}
-        type: Plot
-      name: pnl_gantt
+        type: ColumnPanel
+      name: pnl_sidebar
       properties: {}
       type: ColumnPanel
-    name: pnl_main
+
+    - components:
+      - name: lbl_no_data
+        properties: {align: center, font_size: 14, foreground: '#888888',
+          text: Select a project and import to view the Gantt chart., visible: true}
+        type: Label
+      - name: pnl_gantt_container
+        properties: {}
+        type: ColumnPanel
+      name: pnl_gantt_area
+      properties: {}
+      type: ColumnPanel
+    name: pnl_content_row
     properties: {}
     type: FlowPanel
+
   - components:
     - components:
       - name: lbl_details_title
@@ -102,7 +119,7 @@ components:
     - components:
       - event_bindings: {}
         name: tab_general
-        properties: {role: primary-color, text: General}
+        properties: {text: General}
         type: Button
       - event_bindings: {}
         name: tab_status
@@ -133,10 +150,12 @@ components:
     name: pnl_details
     properties: {background: '#f9f9f9', border: '1px solid #cccccc'}
     type: ColumnPanel
+
   layout_properties: {slot: default}
   name: content_panel
   properties: {}
   type: ColumnPanel
+
 - components:
   - name: lbl_nav_user
     properties: {text: ''}
@@ -149,6 +168,7 @@ components:
   name: navbar_links
   properties: {}
   type: FlowPanel
+
 container:
   properties: {html: '@theme:standard-page.html'}
   type: HtmlTemplate
