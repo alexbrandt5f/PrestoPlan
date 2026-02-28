@@ -44,20 +44,21 @@ native_deps:
     <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
     <script>
       // ===========================================================================
-      //  PrestoPlan Gantt - JavaScript layer
+      //  PrestoPlan Gantt – JavaScript layer  v3
       //
-      //  All layout constants come from Python via js_data so they stay in sync.
-      //  JS reads: toolbarH, detailsH, navH, colHeaderH, rowH from _pp object.
-      //
-      //  Tunable splitter:
-      //    PP_COL_MIN_W : minimum column table width px
-      //    PP_SPLIT_W   : splitter handle width px
-      //    PP_COLLAPSE_MS : animation duration ms
+      //  v3 changes:
+      //    - Toolbar items injected into Anvil nav bar (no separate pp-toolbar)
+      //    - Table row click → details pane + persistent yellow highlight
+      //    - Plotly bar/milestone click → same behaviour via shared _pp_selectRow
+      //    - Hamburger/sidebar toggle works directly in JS (instant)
+      //    - Timescale zoom/pan via click+drag in header area
+      //    - try/catch on every public entry point
       // ===========================================================================
 
       var PP_COL_MIN_W   = 120;
       var PP_SPLIT_W     = 6;
       var PP_COLLAPSE_MS = 200;
+      var PP_TS_SNAP_PX  = 8;   // px proximity to divider for zoom mode
 
       var _pp = {
         form:           null,
@@ -72,277 +73,42 @@ native_deps:
         weekTicks:      [],
         barColCount:    0,
         colsPerWeek:    7,
-        // layout heights from Python
-        toolbarH:    36,
-        detailsH:    220,
-        navH:        56,
-        colHeaderH:  48,
-        rowH:        24,
+        toolbarH:       0,       // no separate toolbar row
+        detailsH:       220,
+        navH:           56,
+        colHeaderH:     48,
+        rowH:           24,
+        selectedRowIdx: -1,
+        selectedTaskId: null,
       };
 
 
-      // ---------------------------------------------------------------------------
-      //  CLEANUP - removes stale pp-shell from a previous render
-      // ---------------------------------------------------------------------------
+      // =========================================================================
+      //  CLEANUP
+      // =========================================================================
       window._pp_cleanup = function() {
-        var old = document.getElementById('pp-shell');
-        if (old && old.parentElement) old.parentElement.removeChild(old);
+        try {
+          var old = document.getElementById('pp-shell');
+          if (old && old.parentElement) old.parentElement.removeChild(old);
+          var inj = document.getElementById('pp-nav-injected');
+          if (inj && inj.parentElement) inj.parentElement.removeChild(inj);
+        } catch(e) { console.warn('[_pp_cleanup]', e); }
       };
 
 
-      // ---------------------------------------------------------------------------
-      //  UTILITY - set innerHTML of an element by id (called from Python)
-      // ---------------------------------------------------------------------------
+      // =========================================================================
+      //  UTILITIES
+      // =========================================================================
       window._pp_setHtml = function(id, html) {
-        var el = document.getElementById(id);
-        if (el) el.innerHTML = html;
+        try {
+          var el = document.getElementById(id);
+          if (el) el.innerHTML = html;
+        } catch(e) { console.warn('[_pp_setHtml]', e); }
       };
 
-
-      // ---------------------------------------------------------------------------
-      //  UTILITY - execute a JS string (called from Python for tab button styles)
-      // ---------------------------------------------------------------------------
       window._pp_execJs = function(js) {
-        try { (new Function(js))(); } catch(e) { console.warn('_pp_execJs error:', e); }
+        try { (new Function(js))(); } catch(e) { console.warn('[_pp_execJs]', e); }
       };
-
-
-      // ---------------------------------------------------------------------------
-      //  TOOLBAR CALLBACKS - called by onclick in toolbar HTML
-      // ---------------------------------------------------------------------------
-      window._pp_onChangeProject = function() {
-        if (_pp.form) anvil.call(_pp.form, '_on_change_project');
-      };
-      window._pp_onSidebarClick = function() {
-        if (_pp.form) anvil.call(_pp.form, '_on_sidebar_toggle');
-      };
-      window._pp_onDetailsClick = function() {
-        if (_pp.form) anvil.call(_pp.form, '_on_details_toggle');
-      };
-      window._pp_onGfsToggle = function() {
-        var panel = document.getElementById('pp-gfs-panel');
-        var btn   = document.getElementById('pp-btn-gfs');
-        if (!panel) return;
-        var open = panel.style.display === 'none' || panel.style.display === '';
-        panel.style.display = open ? 'block' : 'none';
-        if (btn) btn.textContent = (open ? '▼' : '▶') + ' Grouping / Filtering / Sorting';
-        if (_pp.form) anvil.call(_pp.form, '_on_gfs_toggle');
-      };
-      window._pp_onApplyFilters = function() {
-        if (_pp.form) anvil.call(_pp.form, '_on_apply_filters');
-      };
-      window._pp_onClearFilters = function() {
-        if (_pp.form) anvil.call(_pp.form, '_on_clear_filters');
-      };
-      window._pp_onLayoutChange = function(val) {
-        if (_pp.form) anvil.call(_pp.form, '_on_layout_change', val);
-      };
-      window._pp_onTabClick = function(tabName) {
-        if (_pp.form) anvil.call(_pp.form, '_on_tab_click', tabName);
-      };
-
-
-      // ---------------------------------------------------------------------------
-      //  ENTRY POINT
-      // ---------------------------------------------------------------------------
-      window._pp_init = function(form, jsonData) {
-        var data          = JSON.parse(jsonData);
-        _pp.form          = form;
-        _pp.traces        = data.traces;
-        _pp.layout        = data.layout;
-        _pp.rowMeta       = data.rowMeta;
-        _pp.collapseState = data.collapseState;
-        _pp.totalRows     = data.rowMeta.length;
-        _pp.detailsVisible = true;
-        _pp.sidebarVisible = false;
-        _pp.monthBands    = data.monthBands  || [];
-        _pp.weekTicks     = data.weekTicks   || [];
-        _pp.barColCount   = data.barColCount || 0;
-        _pp.colsPerWeek   = data.colsPerWeek || 7;
-        _pp.toolbarH      = data.toolbarH    || 36;
-        _pp.detailsH      = data.detailsH    || 220;
-        _pp.navH          = data.navH        || 56;
-        _pp.colHeaderH    = data.colHeaderH  || 48;
-        _pp.rowH          = data.rowH        || 24;
-
-        _pp_applyLayout();
-        _pp_renderPlotly();
-        _pp_buildTimescaleHeader();
-        _pp_applyCollapseState(false);
-        _pp_setupScrollSync();
-        _pp_setupSplitter();
-        _pp_setupKeyboard();
-        window.addEventListener('resize', function() {
-          _pp_applyLayout();
-          _pp_rebuildTimescaleHeader();
-        });
-      };
-
-
-      // ---------------------------------------------------------------------------
-      //  LAYOUT ENGINE
-      //  pp-shell is position:fixed below the Anvil nav bar.
-      //  Internal structure (top to bottom):
-      //    pp-toolbar    (toolbarH px)
-      //    pp-main-row   (fills remaining height minus detailsH)
-      //      pp-sidebar  (sidebarW or 0)
-      //      pp-gantt-area
-      //        pp-col-header  (colHeaderH px) <-- timescale + col names SAME element
-      //        pp-scroll-body (remaining)
-      //          pp-col-data | pp-splitter | pp-plot-pane
-      //    pp-details    (detailsH px)
-      // ---------------------------------------------------------------------------
-      function _pp_applyLayout() {
-        var winH     = window.innerHeight;
-        var winW     = window.innerWidth;
-        var navH     = _pp.navH;
-        var toolbarH = _pp.toolbarH;
-        var detH     = _pp.detailsVisible ? _pp.detailsH : 0;
-        var hdrH     = _pp.colHeaderH;
-        var sidW     = _pp.sidebarVisible ? 220 : 0;
-
-        var shellH   = winH - navH;
-        var mainH    = shellH - toolbarH - detH;
-        var bodyH    = mainH - hdrH;
-
-        // Shell
-        _pp_css('pp-shell', {
-          position:      'fixed',
-          top:           navH + 'px',
-          left:          '0',
-          right:         '0',
-          bottom:        '0',
-          width:         '100%',
-          display:       'flex',
-          flexDirection: 'column',
-          overflow:      'hidden',
-          zIndex:        '10',
-          background:    'white',
-          boxSizing:     'border-box',
-        });
-
-        // Toolbar
-        _pp_css('pp-toolbar', {
-          height:    toolbarH + 'px',
-          minHeight: toolbarH + 'px',
-          flexShrink: '0',
-        });
-
-        // Main row
-        _pp_css('pp-main-row', {
-          display:       'flex',
-          flexDirection: 'row',
-          flex:          '1 1 auto',
-          height:        mainH + 'px',
-          minHeight:     '0',
-          overflow:      'hidden',
-        });
-
-        // Sidebar
-        var sidebar = document.getElementById('pp-sidebar');
-        if (sidebar) {
-          sidebar.style.width     = sidW + 'px';
-          sidebar.style.minWidth  = sidW + 'px';
-          sidebar.style.maxWidth  = sidW + 'px';
-          sidebar.style.display   = sidW === 0 ? 'none' : 'flex';
-          sidebar.style.flexDirection = 'column';
-          sidebar.style.overflowY = 'auto';
-          sidebar.style.overflowX = 'hidden';
-          sidebar.style.borderRight = '2px solid #cccccc';
-          sidebar.style.background  = '#fafafa';
-          sidebar.style.flexShrink  = '0';
-          sidebar.style.boxSizing   = 'border-box';
-        }
-
-        // Gantt area
-        _pp_css('pp-gantt-area', {
-          display:       'flex',
-          flexDirection: 'column',
-          flex:          '1 1 auto',
-          minWidth:      '0',
-          overflow:      'hidden',
-        });
-
-        // Unified header (col names + timescale, same height)
-        _pp_css('pp-col-header', {
-          display:      'flex',
-          flexDirection: 'row',
-          height:       hdrH + 'px',
-          minHeight:    hdrH + 'px',
-          flexShrink:   '0',
-          overflow:     'hidden',
-          borderBottom: '2px solid #999',
-          background:   '#1565c0',
-        });
-
-        // Scroll body
-        _pp_css('pp-scroll-body', {
-          display:       'flex',
-          flexDirection: 'row',
-          flex:          '1 1 auto',
-          height:        bodyH + 'px',
-          minHeight:     '0',
-          overflow:      'hidden',
-        });
-
-        // Col data - width driven by the table inside it
-        var colTable = document.getElementById('pp-col-table');
-        var colW = colTable ? Math.max(PP_COL_MIN_W, colTable.offsetWidth) : 300;
-        _pp_css('pp-col-data', {
-          width:      colW + 'px',
-          minWidth:   colW + 'px',
-          maxWidth:   colW + 'px',
-          overflowY:  'auto',
-          overflowX:  'hidden',
-          flexShrink: '0',
-          background: 'white',
-        });
-
-        // Update pp-col-names width to match
-        var colNames = document.getElementById('pp-col-names');
-        if (colNames) {
-          colNames.style.width    = colW + 'px';
-          colNames.style.minWidth = colW + 'px';
-          colNames.style.maxWidth = colW + 'px';
-        }
-        // Update splitter spacer
-        _pp_css('pp-header-splitter-spacer', {
-          width:    PP_SPLIT_W + 'px',
-          minWidth: PP_SPLIT_W + 'px',
-        });
-
-        // Splitter handle
-        _pp_css('pp-splitter', {
-          width:      PP_SPLIT_W + 'px',
-          minWidth:   PP_SPLIT_W + 'px',
-          background: '#bdbdbd',
-          cursor:     'col-resize',
-          flexShrink: '0',
-          zIndex:     '5',
-        });
-
-        // Plot pane
-        _pp_css('pp-plot-pane', {
-          flex:      '1 1 auto',
-          overflowY: 'auto',
-          overflowX: 'auto',
-          minWidth:  '0',
-        });
-
-        // Details pane
-        var det = document.getElementById('pp-details');
-        if (det) {
-          det.style.height     = _pp.detailsH + 'px';
-          det.style.minHeight  = _pp.detailsH + 'px';
-          det.style.maxHeight  = _pp.detailsH + 'px';
-          det.style.flexShrink = '0';
-          det.style.display    = _pp.detailsVisible ? 'flex' : 'none';
-          det.style.flexDirection = 'column';
-          det.style.overflowY  = 'hidden';
-          det.style.background = '#f9f9f9';
-          det.style.borderTop  = '2px solid #cccccc';
-        }
-      }
 
       function _pp_css(id, styles) {
         var el = document.getElementById(id);
@@ -351,94 +117,432 @@ native_deps:
       }
 
 
-      // ---------------------------------------------------------------------------
-      //  TIMESCALE HEADER
-      //  Builds month/week cells into pp-header-months and pp-header-weeks.
-      //  Called after _pp_applyLayout so pp-header-right has its final width.
-      // ---------------------------------------------------------------------------
-      function _pp_buildTimescaleHeader() {
-        var plotPane = document.getElementById('pp-plot-pane');
-        var plotW    = plotPane ? plotPane.offsetWidth : 800;
-        var pxPerCol = _pp.barColCount > 0 ? plotW / _pp.barColCount : 1;
+      // =========================================================================
+      //  NAV BAR INJECTION
+      //  Inserts hamburger + project info + buttons into the Anvil nav bar.
+      //  Layout:  LEFT ☰  |  CENTER project + import + Change Project  |  RIGHT existing items
+      // =========================================================================
+      function _pp_injectNavBarItems(projectName, importLabel) {
+        try {
+          // Remove previous injection
+          var prev = document.getElementById('pp-nav-injected');
+          if (prev) prev.parentElement.removeChild(prev);
 
-        var monthRow = document.getElementById('pp-header-months');
-        var weekRow  = document.getElementById('pp-header-weeks');
-        if (!monthRow || !weekRow) return;
+          // Find the Anvil navbar-collapse (contains nav links)
+          var collapse = document.querySelector('.navbar-collapse');
+          if (!collapse) {
+            console.warn('[_pp_injectNavBarItems] .navbar-collapse not found');
+            return;
+          }
 
-        monthRow.innerHTML = '';
-        weekRow.innerHTML  = '';
+          // Build container that sits before the right-side nav links
+          var c = document.createElement('div');
+          c.id = 'pp-nav-injected';
+          c.style.cssText = 'display:flex; align-items:center; gap:10px;'
+            + ' flex:1; min-width:0; padding:0 12px;';
 
-        _pp.monthBands.forEach(function(band) {
-          var w    = Math.round((band.endCol - band.startCol) * pxPerCol);
-          var cell = document.createElement('div');
-          cell.style.cssText = 'width:'+w+'px; min-width:'+w+'px; overflow:hidden;'
-            +' white-space:nowrap; padding:3px 4px; font-size:11px; font-weight:bold;'
-            +' color:white; font-family:Arial,sans-serif;'
-            +' border-right:1px solid #0d47a1; box-sizing:border-box;';
-          cell.textContent = band.label;
-          monthRow.appendChild(cell);
+          // -- Hamburger --
+          var ham = document.createElement('button');
+          ham.id = 'pp-btn-sidebar';
+          ham.textContent = '☰';
+          ham.title = 'Toggle filter/group/sort panel';
+          ham.style.cssText = 'background:none; border:1px solid rgba(255,255,255,0.4);'
+            + ' color:white; font-size:18px; padding:2px 10px; cursor:pointer;'
+            + ' border-radius:4px; line-height:1.2; flex-shrink:0;';
+          ham.onclick = function() { _pp_onSidebarClick(); };
+          c.appendChild(ham);
+
+          // -- Spacer left --
+          var s1 = document.createElement('div');
+          s1.style.flex = '1';
+          c.appendChild(s1);
+
+          // -- Project name --
+          var pn = document.createElement('span');
+          pn.id = 'pp-lbl-project';
+          pn.textContent = projectName || '';
+          pn.style.cssText = 'font-weight:bold; font-size:13px; color:white;'
+            + ' white-space:nowrap; overflow:hidden; text-overflow:ellipsis;';
+          c.appendChild(pn);
+
+          // -- Import label --
+          var il = document.createElement('span');
+          il.id = 'pp-lbl-import';
+          il.textContent = importLabel || '';
+          il.style.cssText = 'font-size:12px; color:rgba(255,255,255,0.8);'
+            + ' white-space:nowrap; overflow:hidden; text-overflow:ellipsis;';
+          c.appendChild(il);
+
+          // -- Change Project button --
+          var cp = document.createElement('button');
+          cp.textContent = 'Change Project';
+          cp.style.cssText = 'background:none; border:1px solid rgba(255,255,255,0.4);'
+            + ' color:white; font-size:12px; padding:2px 10px; cursor:pointer;'
+            + ' border-radius:3px; white-space:nowrap; flex-shrink:0;';
+          cp.onclick = function() { _pp_onChangeProject(); };
+          c.appendChild(cp);
+
+          // -- Spacer right --
+          var s2 = document.createElement('div');
+          s2.style.flex = '1';
+          c.appendChild(s2);
+
+          // -- Hide/Show Details button --
+          var db = document.createElement('button');
+          db.id = 'pp-btn-details';
+          db.textContent = 'Hide Details';
+          db.style.cssText = 'background:none; border:1px solid rgba(255,255,255,0.4);'
+            + ' color:white; font-size:12px; padding:2px 10px; cursor:pointer;'
+            + ' border-radius:3px; white-space:nowrap; flex-shrink:0;';
+          db.onclick = function() { _pp_onDetailsClick(); };
+          c.appendChild(db);
+
+          // Insert before the right-side <ul> (which has lbl_nav_user, btn_logout)
+          var rightNav = collapse.querySelector('.nav.navbar-right, .navbar-nav.navbar-right');
+          if (rightNav) {
+            collapse.insertBefore(c, rightNav);
+          } else {
+            // Fallback: insert as first child
+            collapse.insertBefore(c, collapse.firstChild);
+          }
+
+          // Ensure collapse is flex so items share the row
+          collapse.style.display    = 'flex';
+          collapse.style.alignItems = 'center';
+
+        } catch(e) {
+          console.warn('[_pp_injectNavBarItems]', e);
+        }
+      }
+
+
+      // =========================================================================
+      //  TOOLBAR CALLBACKS
+      // =========================================================================
+      window._pp_onChangeProject = function() {
+        try { if (_pp.form) anvil.call(_pp.form, '_on_change_project'); }
+        catch(e) { console.warn('[_pp_onChangeProject]', e); }
+      };
+
+      window._pp_onSidebarClick = function() {
+        try {
+          _pp.sidebarVisible = !_pp.sidebarVisible;
+          var btn = document.getElementById('pp-btn-sidebar');
+          if (btn) btn.textContent = _pp.sidebarVisible ? '✕' : '☰';
+          _pp_applyLayout();
+          _pp_rebuildTimescaleHeader();
+          if (_pp.form) {
+            try { anvil.call(_pp.form, '_on_sidebar_toggled', _pp.sidebarVisible); }
+            catch(e2) { /* fire-and-forget */ }
+          }
+        } catch(e) { console.warn('[_pp_onSidebarClick]', e); }
+      };
+
+      window._pp_onDetailsClick = function() {
+        try {
+          _pp.detailsVisible = !_pp.detailsVisible;
+          var btn = document.getElementById('pp-btn-details');
+          if (btn) btn.textContent = _pp.detailsVisible ? 'Hide Details' : 'Show Details';
+          _pp_applyLayout();
+          if (_pp.form) {
+            try { anvil.call(_pp.form, '_on_details_toggled', _pp.detailsVisible); }
+            catch(e2) { /* fire-and-forget */ }
+          }
+        } catch(e) { console.warn('[_pp_onDetailsClick]', e); }
+      };
+
+      window._pp_onGfsToggle = function() {
+        try {
+          var panel = document.getElementById('pp-gfs-panel');
+          var btn   = document.getElementById('pp-btn-gfs');
+          if (!panel) return;
+          var open = panel.style.display === 'none' || panel.style.display === '';
+          panel.style.display = open ? 'block' : 'none';
+          if (btn) btn.textContent = (open ? '▼' : '▶') + ' Grouping / Filtering / Sorting';
+        } catch(e) { console.warn('[_pp_onGfsToggle]', e); }
+      };
+
+      window._pp_onApplyFilters = function() {
+        try { if (_pp.form) anvil.call(_pp.form, '_on_apply_filters'); }
+        catch(e) { console.warn(e); }
+      };
+      window._pp_onClearFilters = function() {
+        try { if (_pp.form) anvil.call(_pp.form, '_on_clear_filters'); }
+        catch(e) { console.warn(e); }
+      };
+      window._pp_onLayoutChange = function(val) {
+        try { if (_pp.form) anvil.call(_pp.form, '_on_layout_change', val); }
+        catch(e) { console.warn(e); }
+      };
+      window._pp_onTabClick = function(tabName) {
+        try { if (_pp.form) anvil.call(_pp.form, '_on_tab_click', tabName); }
+        catch(e) { console.warn(e); }
+      };
+
+
+      // =========================================================================
+      //  ENTRY POINT
+      // =========================================================================
+      window._pp_init = function(form, jsonData) {
+        try {
+          var d = JSON.parse(jsonData);
+          _pp.form           = form;
+          _pp.traces         = d.traces;
+          _pp.layout         = d.layout;
+          _pp.rowMeta        = d.rowMeta;
+          _pp.collapseState  = d.collapseState;
+          _pp.totalRows      = d.rowMeta.length;
+          _pp.detailsVisible = true;
+          _pp.sidebarVisible = false;
+          _pp.selectedRowIdx = -1;
+          _pp.selectedTaskId = null;
+          _pp.monthBands     = d.monthBands  || [];
+          _pp.weekTicks      = d.weekTicks   || [];
+          _pp.barColCount    = d.barColCount || 0;
+          _pp.colsPerWeek    = d.colsPerWeek || 7;
+          _pp.toolbarH       = 0;
+          _pp.detailsH       = d.detailsH   || 220;
+          _pp.navH           = d.navH        || 56;
+          _pp.colHeaderH     = d.colHeaderH  || 48;
+          _pp.rowH           = d.rowH        || 24;
+
+          _pp_injectNavBarItems(d.projectName || '', d.importLabel || '');
+          _pp_applyLayout();
+          _pp_renderPlotly();
+          _pp_buildTimescaleHeader();
+          _pp_applyCollapseState(false);
+          _pp_setupScrollSync();
+          _pp_setupSplitter();
+          _pp_setupKeyboard();
+          _pp_setupTableClickHandlers();
+          _pp_setupTimescaleDrag();
+
+          window.addEventListener('resize', function() {
+            _pp_applyLayout();
+            _pp_rebuildTimescaleHeader();
+          });
+        } catch(e) {
+          console.error('[_pp_init] FATAL:', e);
+        }
+      };
+
+
+      // =========================================================================
+      //  TABLE ROW CLICK  (event delegation on pp-col-table)
+      // =========================================================================
+      function _pp_setupTableClickHandlers() {
+        var table = document.getElementById('pp-col-table');
+        if (!table) return;
+        table.addEventListener('click', function(e) {
+          try {
+            var tr = e.target;
+            while (tr && tr.tagName !== 'TR') tr = tr.parentElement;
+            if (!tr || !tr.hasAttribute('data-row-idx')) return;
+
+            var rowIdx = parseInt(tr.getAttribute('data-row-idx'));
+            if (isNaN(rowIdx)) return;
+            var meta = _pp.rowMeta[rowIdx];
+            if (!meta) return;
+
+            // WBS rows toggle collapse — don't select
+            if (meta.rowType === 'WBS') return;
+
+            var taskId = meta.taskId || tr.getAttribute('data-task-id') || '';
+            if (!taskId) return;
+            _pp_selectRow(rowIdx, taskId);
+          } catch(ex) { console.warn('[table click]', ex); }
+        });
+      }
+
+      // -------------------------------------------------------------------------
+      //  SELECT ROW  — shared by table click and Plotly click
+      // -------------------------------------------------------------------------
+      function _pp_selectRow(rowIdx, taskId) {
+        _pp_clearRowHighlight();
+        _pp.selectedRowIdx = rowIdx;
+        _pp.selectedTaskId = taskId;
+
+        // Yellow highlight on table row
+        var table = document.getElementById('pp-col-table');
+        if (table) {
+          var tr = table.querySelector('tr[data-row-idx="' + rowIdx + '"]');
+          if (tr) {
+            tr.style.background = '#fff9c4';
+            tr.setAttribute('data-pp-selected', 'true');
+          }
+        }
+
+        // Tell Python to populate details pane
+        if (_pp.form) {
+          try { anvil.call(_pp.form, '_on_gantt_click', {text: String(taskId)}); }
+          catch(e) { console.warn('[_pp_selectRow]', e); }
+        }
+      }
+
+      function _pp_clearRowHighlight() {
+        var table = document.getElementById('pp-col-table');
+        if (!table) return;
+        var prev = table.querySelector('tr[data-pp-selected="true"]');
+        if (prev) {
+          prev.style.background = 'white';
+          prev.removeAttribute('data-pp-selected');
+        }
+      }
+
+
+      // =========================================================================
+      //  LAYOUT ENGINE
+      //  No pp-toolbar row. Shell starts directly with pp-main-row.
+      // =========================================================================
+      function _pp_applyLayout() {
+        var winH = window.innerHeight;
+        var navH = _pp.navH;
+        var detH = _pp.detailsVisible ? _pp.detailsH : 0;
+        var hdrH = _pp.colHeaderH;
+        var sidW = _pp.sidebarVisible ? 220 : 0;
+
+        var shellH = winH - navH;
+        var mainH  = shellH - detH;
+        var bodyH  = mainH - hdrH;
+
+        _pp_css('pp-shell', {
+          position:'fixed', top:navH+'px', left:'0', right:'0', bottom:'0',
+          width:'100%', display:'flex', flexDirection:'column',
+          overflow:'hidden', zIndex:'10', background:'white', boxSizing:'border-box',
         });
 
-        for (var i = 0; i < _pp.weekTicks.length; i++) {
-          var tick    = _pp.weekTicks[i];
-          var nextCol = i + 1 < _pp.weekTicks.length ? _pp.weekTicks[i+1].col : _pp.barColCount;
-          var w2      = Math.round((nextCol - tick.col) * pxPerCol);
-          var cell2   = document.createElement('div');
-          cell2.style.cssText = 'width:'+w2+'px; min-width:'+w2+'px; overflow:hidden;'
-            +' white-space:nowrap; padding:3px 4px; font-size:10px;'
-            +' color:#bbdefb; font-family:Arial,sans-serif;'
-            +' border-right:1px solid #0d47a1; box-sizing:border-box;';
-          cell2.textContent = tick.label;
-          weekRow.appendChild(cell2);
+        _pp_css('pp-main-row', {
+          display:'flex', flexDirection:'row', flex:'1 1 auto',
+          height:mainH+'px', minHeight:'0', overflow:'hidden',
+        });
+
+        var sb = document.getElementById('pp-sidebar');
+        if (sb) {
+          sb.style.width = sidW+'px'; sb.style.minWidth = sidW+'px';
+          sb.style.maxWidth = sidW+'px';
+          sb.style.display = sidW === 0 ? 'none' : 'flex';
+          sb.style.flexDirection = 'column';
+          sb.style.overflowY = 'auto'; sb.style.overflowX = 'hidden';
+          sb.style.borderRight = '2px solid #ccc'; sb.style.background = '#fafafa';
+          sb.style.flexShrink = '0'; sb.style.boxSizing = 'border-box';
+        }
+
+        _pp_css('pp-gantt-area', {
+          display:'flex', flexDirection:'column', flex:'1 1 auto',
+          minWidth:'0', overflow:'hidden',
+        });
+
+        _pp_css('pp-col-header', {
+          display:'flex', flexDirection:'row',
+          height:hdrH+'px', minHeight:hdrH+'px', flexShrink:'0',
+          overflow:'hidden', borderBottom:'2px solid #999', background:'#1565c0',
+        });
+
+        _pp_css('pp-scroll-body', {
+          display:'flex', flexDirection:'row', flex:'1 1 auto',
+          height:bodyH+'px', minHeight:'0', overflow:'hidden',
+        });
+
+        var colTable = document.getElementById('pp-col-table');
+        var colW = colTable ? Math.max(PP_COL_MIN_W, colTable.offsetWidth) : 300;
+
+        _pp_css('pp-col-data', {
+          width:colW+'px', minWidth:colW+'px', maxWidth:colW+'px',
+          overflowY:'auto', overflowX:'hidden', flexShrink:'0', background:'white',
+        });
+
+        var cn = document.getElementById('pp-col-names');
+        if (cn) { cn.style.width=colW+'px'; cn.style.minWidth=colW+'px'; cn.style.maxWidth=colW+'px'; }
+
+        _pp_css('pp-header-splitter-spacer', {
+          width:PP_SPLIT_W+'px', minWidth:PP_SPLIT_W+'px',
+        });
+        _pp_css('pp-splitter', {
+          width:PP_SPLIT_W+'px', minWidth:PP_SPLIT_W+'px',
+          background:'#bdbdbd', cursor:'col-resize', flexShrink:'0', zIndex:'5',
+        });
+        _pp_css('pp-plot-pane', {
+          flex:'1 1 auto', overflowY:'auto', overflowX:'auto', minWidth:'0',
+        });
+
+        var det = document.getElementById('pp-details');
+        if (det) {
+          det.style.height = _pp.detailsH+'px'; det.style.minHeight = _pp.detailsH+'px';
+          det.style.maxHeight = _pp.detailsH+'px'; det.style.flexShrink = '0';
+          det.style.display = _pp.detailsVisible ? 'flex' : 'none';
+          det.style.flexDirection = 'column'; det.style.overflowY = 'hidden';
+          det.style.background = '#f9f9f9'; det.style.borderTop = '2px solid #ccc';
+        }
+      }
+
+
+      // =========================================================================
+      //  TIMESCALE HEADER
+      // =========================================================================
+      function _pp_getPxPerCol() {
+        var pp = document.getElementById('pp-plot-pane');
+        var w  = pp ? pp.offsetWidth : 800;
+        return _pp.barColCount > 0 ? w / _pp.barColCount : 1;
+      }
+
+      function _pp_buildTimescaleHeader() {
+        var ppc = _pp_getPxPerCol();
+        var mr = document.getElementById('pp-header-months');
+        var wr = document.getElementById('pp-header-weeks');
+        if (!mr || !wr) return;
+        mr.innerHTML = ''; wr.innerHTML = '';
+
+        _pp.monthBands.forEach(function(b) {
+          var w = Math.round((b.endCol - b.startCol) * ppc);
+          var d = document.createElement('div');
+          d.style.cssText = 'width:'+w+'px;min-width:'+w+'px;overflow:hidden;'
+            +'white-space:nowrap;padding:3px 4px;font-size:11px;font-weight:bold;'
+            +'color:white;font-family:Arial,sans-serif;'
+            +'border-right:1px solid #0d47a1;box-sizing:border-box;';
+          d.textContent = b.label;
+          mr.appendChild(d);
+        });
+
+        for (var i=0; i<_pp.weekTicks.length; i++) {
+          var t = _pp.weekTicks[i];
+          var nc = i+1<_pp.weekTicks.length ? _pp.weekTicks[i+1].col : _pp.barColCount;
+          var w2 = Math.round((nc - t.col) * ppc);
+          var d2 = document.createElement('div');
+          d2.style.cssText = 'width:'+w2+'px;min-width:'+w2+'px;overflow:hidden;'
+            +'white-space:nowrap;padding:3px 4px;font-size:10px;'
+            +'color:#bbdefb;font-family:Arial,sans-serif;'
+            +'border-right:1px solid #0d47a1;box-sizing:border-box;';
+          d2.textContent = t.label;
+          wr.appendChild(d2);
         }
       }
 
       function _pp_rebuildTimescaleHeader() {
-        // After splitter drag: update spacer + recalculate cell widths
-        var colData = document.getElementById('pp-col-data');
-        var colW    = colData ? colData.offsetWidth : 0;
+        var cd = document.getElementById('pp-col-data');
+        var cw = cd ? cd.offsetWidth : 0;
+        var sp = document.getElementById('pp-header-splitter-spacer');
+        if (sp) { sp.style.width=PP_SPLIT_W+'px'; sp.style.minWidth=PP_SPLIT_W+'px'; }
+        var cn = document.getElementById('pp-col-names');
+        if (cn) { cn.style.width=cw+'px'; cn.style.minWidth=cw+'px'; cn.style.maxWidth=cw+'px'; }
 
-        var spacer = document.getElementById('pp-header-splitter-spacer');
-        if (spacer) {
-          spacer.style.width    = PP_SPLIT_W + 'px';
-          spacer.style.minWidth = PP_SPLIT_W + 'px';
-        }
-        var colNames = document.getElementById('pp-col-names');
-        if (colNames) {
-          colNames.style.width    = colW + 'px';
-          colNames.style.minWidth = colW + 'px';
-          colNames.style.maxWidth = colW + 'px';
-        }
-
-        var plotPane = document.getElementById('pp-plot-pane');
-        var plotW    = plotPane ? plotPane.offsetWidth : 800;
-        var pxPerCol = _pp.barColCount > 0 ? plotW / _pp.barColCount : 1;
-
-        var monthRow = document.getElementById('pp-header-months');
-        if (monthRow) {
-          var mcells = monthRow.children;
-          for (var i = 0; i < mcells.length && i < _pp.monthBands.length; i++) {
-            var w = Math.round((_pp.monthBands[i].endCol - _pp.monthBands[i].startCol) * pxPerCol);
-            mcells[i].style.width    = w + 'px';
-            mcells[i].style.minWidth = w + 'px';
+        // Check if Plotly has a zoomed range
+        var plotDiv = document.getElementById('pp-plotly-div');
+        if (plotDiv && plotDiv.layout && plotDiv.layout.xaxis && plotDiv.layout.xaxis.range) {
+          var r = plotDiv.layout.xaxis.range;
+          if (r[0] > 0.5 || r[1] < _pp.barColCount - 0.5) {
+            // Zoomed — rebuild from range
+            _pp_rebuildTimescaleFromRange(r);
+            return;
           }
         }
-        var weekRow = document.getElementById('pp-header-weeks');
-        if (weekRow) {
-          var wcells = weekRow.children;
-          for (var j = 0; j < wcells.length && j < _pp.weekTicks.length; j++) {
-            var nextCol = j + 1 < _pp.weekTicks.length ? _pp.weekTicks[j+1].col : _pp.barColCount;
-            var w2 = Math.round((nextCol - _pp.weekTicks[j].col) * pxPerCol);
-            wcells[j].style.width    = w2 + 'px';
-            wcells[j].style.minWidth = w2 + 'px';
-          }
-        }
+        // Not zoomed — full rebuild
+        _pp_buildTimescaleHeader();
       }
 
 
-      // ---------------------------------------------------------------------------
+      // =========================================================================
       //  PLOTLY RENDER
-      // ---------------------------------------------------------------------------
+      // =========================================================================
       function _pp_renderPlotly() {
         var div = document.getElementById('pp-plotly-div');
         if (!div) { setTimeout(_pp_renderPlotly, 200); return; }
@@ -448,29 +552,40 @@ native_deps:
         });
 
         div.on('plotly_click', function(data) {
-          if (!data || !data.points || !data.points.length) return;
-          var pt     = data.points[0];
-          var taskId = String(pt.customdata || pt.text || '').trim();
-          if (!taskId || taskId === 'undefined' || taskId === 'null') return;
-          if (_pp.form) anvil.call(_pp.form, '_on_gantt_click', {text: taskId});
+          try {
+            if (!data || !data.points || !data.points.length) return;
+            var pt     = data.points[0];
+            var taskId = String(pt.customdata || pt.text || '').trim();
+            if (!taskId || taskId==='undefined' || taskId==='null' || taskId==='') return;
+
+            // Find row index for this task
+            var rowIdx = -1;
+            for (var i=0; i<_pp.rowMeta.length; i++) {
+              if (String(_pp.rowMeta[i].taskId) === taskId) { rowIdx=i; break; }
+            }
+            if (rowIdx >= 0) {
+              _pp_selectRow(rowIdx, taskId);
+            } else {
+              // Fallback — call Python directly
+              if (_pp.form) anvil.call(_pp.form, '_on_gantt_click', {text:taskId});
+            }
+          } catch(e) { console.warn('[plotly_click]', e); }
         });
       }
 
 
-      // ---------------------------------------------------------------------------
+      // =========================================================================
       //  COLLAPSE LOGIC
-      // ---------------------------------------------------------------------------
+      // =========================================================================
       function _pp_isRowVisible(idx) {
-        var meta = _pp.rowMeta[idx];
-        if (!meta) return true;
-        var pid = meta.parentWbsId;
+        var m = _pp.rowMeta[idx];
+        if (!m) return true;
+        var pid = m.parentWbsId;
         while (pid) {
           if (_pp.collapseState[pid] === false) return false;
           var owner = null;
-          for (var i = 0; i < _pp.rowMeta.length; i++) {
-            if (_pp.rowMeta[i].wbsId === pid && _pp.rowMeta[i].rowType === 'WBS') {
-              owner = _pp.rowMeta[i]; break;
-            }
+          for (var i=0; i<_pp.rowMeta.length; i++) {
+            if (_pp.rowMeta[i].wbsId===pid && _pp.rowMeta[i].rowType==='WBS') { owner=_pp.rowMeta[i]; break; }
           }
           pid = owner ? owner.parentWbsId : null;
         }
@@ -480,208 +595,331 @@ native_deps:
       function _pp_applyCollapseState(animate) {
         var table = document.getElementById('pp-col-table');
         if (!table) return;
-
         table.querySelectorAll('tr[data-row-idx]').forEach(function(tr) {
-          var idx  = parseInt(tr.getAttribute('data-row-idx'));
-          var meta = _pp.rowMeta[idx];
-          if (!meta) return;
+          var idx = parseInt(tr.getAttribute('data-row-idx'));
+          var m   = _pp.rowMeta[idx]; if (!m) return;
           var vis = _pp_isRowVisible(idx);
           var cur = tr.style.display !== 'none';
 
           if (animate && !vis && cur) {
-            tr.style.transition = 'opacity ' + PP_COLLAPSE_MS + 'ms';
-            tr.style.opacity = '0';
-            setTimeout(function() {
-              tr.style.display = 'none'; tr.style.opacity = ''; tr.style.transition = '';
-            }, PP_COLLAPSE_MS);
+            tr.style.transition='opacity '+PP_COLLAPSE_MS+'ms'; tr.style.opacity='0';
+            setTimeout(function(){ tr.style.display='none'; tr.style.opacity=''; tr.style.transition=''; }, PP_COLLAPSE_MS);
           } else if (animate && vis && !cur) {
-            tr.style.display = '';
-            tr.style.opacity = '0';
-            tr.style.transition = 'opacity ' + PP_COLLAPSE_MS + 'ms';
-            setTimeout(function() {
-              tr.style.opacity = '1';
-              setTimeout(function() { tr.style.opacity = ''; tr.style.transition = ''; }, PP_COLLAPSE_MS);
-            }, 10);
+            tr.style.display=''; tr.style.opacity='0';
+            tr.style.transition='opacity '+PP_COLLAPSE_MS+'ms';
+            setTimeout(function(){ tr.style.opacity='1';
+                                   setTimeout(function(){ tr.style.opacity=''; tr.style.transition=''; }, PP_COLLAPSE_MS);
+                                 }, 10);
           } else {
             tr.style.display = vis ? '' : 'none';
           }
 
-          if (meta.rowType === 'WBS' && meta.wbsId) {
+          if (m.rowType==='WBS' && m.wbsId) {
             var icon = tr.querySelector('.pp-wbs-icon');
-            if (icon) icon.textContent = (_pp.collapseState[meta.wbsId] !== false) ? '▼' : '▶';
+            if (icon) icon.textContent = (_pp.collapseState[m.wbsId]!==false) ? '▼' : '▶';
           }
         });
-
-        setTimeout(_pp_syncPlotlyToCollapse, animate ? PP_COLLAPSE_MS + 50 : 0);
+        setTimeout(_pp_syncPlotlyToCollapse, animate ? PP_COLLAPSE_MS+50 : 0);
       }
 
       function _pp_syncPlotlyToCollapse() {
-        var newY = {}, yPos = 0;
-        for (var i = 0; i < _pp.rowMeta.length; i++) {
-          if (_pp_isRowVisible(i)) newY[i] = yPos++;
+        var newY={}, yPos=0;
+        for (var i=0; i<_pp.rowMeta.length; i++) {
+          if (_pp_isRowVisible(i)) newY[i]=yPos++;
         }
-        var visCount  = yPos;
-
-        var newTraces = JSON.parse(JSON.stringify(_pp.traces));
-        newTraces.forEach(function(trace) {
-          if (!trace.y) return;
-          var nx = [], ny = [], nt = [], nc = [];
-          for (var i = 0; i < trace.y.length; i++) {
-            var y = trace.y[i];
-            if (y === null || y === undefined) {
-              nx.push(null); ny.push(null);
-              nt.push(trace.text       ? (trace.text[i]       || '') : '');
-              nc.push(trace.customdata ? (trace.customdata[i]  || '') : '');
+        var vc = yPos;
+        var nt = JSON.parse(JSON.stringify(_pp.traces));
+        nt.forEach(function(tr) {
+          if (!tr.y) return;
+          var nx=[],ny=[],ntx=[],nc=[];
+          for (var j=0;j<tr.y.length;j++) {
+            var y=tr.y[j];
+            if (y===null||y===undefined) {
+              nx.push(null);ny.push(null);
+              ntx.push(tr.text?(tr.text[j]||''):'');
+              nc.push(tr.customdata?(tr.customdata[j]||''):'');
             } else {
-              var ri = Math.round(y);
+              var ri=Math.round(y);
               if (newY.hasOwnProperty(ri)) {
-                nx.push(trace.x[i]); ny.push(newY[ri]);
-                nt.push(trace.text       ? (trace.text[i]       || '') : '');
-                nc.push(trace.customdata ? (trace.customdata[i]  || '') : '');
+                nx.push(tr.x[j]);ny.push(newY[ri]);
+                ntx.push(tr.text?(tr.text[j]||''):'');
+                nc.push(tr.customdata?(tr.customdata[j]||''):'');
               }
             }
           }
-          trace.x = nx; trace.y = ny;
-          if (trace.text)       trace.text       = nt;
-          if (trace.customdata) trace.customdata = nc;
+          tr.x=nx;tr.y=ny;
+          if (tr.text) tr.text=ntx;
+          if (tr.customdata) tr.customdata=nc;
         });
 
-        var newLayout = JSON.parse(JSON.stringify(_pp.layout));
-        if (newLayout.shapes) {
-          newLayout.shapes = newLayout.shapes
-            .filter(function(s) { var ri = Math.round((s.y0+s.y1)/2); return newY.hasOwnProperty(ri); })
-            .map(function(s) {
-              var ny2 = newY[Math.round((s.y0+s.y1)/2)];
-              return Object.assign({}, s, {y0: ny2-0.5, y1: ny2+0.5});
-            });
+        var nl = JSON.parse(JSON.stringify(_pp.layout));
+        if (nl.shapes) {
+          nl.shapes = nl.shapes
+            .filter(function(s){ var ri=Math.round((s.y0+s.y1)/2); return newY.hasOwnProperty(ri); })
+            .map(function(s){ var n2=newY[Math.round((s.y0+s.y1)/2)]; return Object.assign({},s,{y0:n2-0.5,y1:n2+0.5}); });
         }
-        var newH = Math.max(_pp.rowH, visCount * _pp.rowH);
-        newLayout.height = newH;
-        newLayout.yaxis.range = [visCount, -1];
+        var nh = Math.max(_pp.rowH, vc*_pp.rowH);
+        nl.height=nh; nl.yaxis.range=[vc,-1];
 
-        var plotDiv = document.getElementById('pp-plotly-div');
-        if (plotDiv) plotDiv.style.height = newH + 'px';
-        Plotly.react(plotDiv, newTraces, newLayout, {responsive:false, displayModeBar:false});
+        var pd = document.getElementById('pp-plotly-div');
+        if (pd) pd.style.height=nh+'px';
+        Plotly.react(pd, nt, nl, {responsive:false,displayModeBar:false});
       }
 
 
-      // ---------------------------------------------------------------------------
+      // =========================================================================
       //  WBS TOGGLE
-      // ---------------------------------------------------------------------------
+      // =========================================================================
       window._pp_toggleWbs = function(wbsId) {
-        var cur = (_pp.collapseState[wbsId] !== false);
+        var cur = (_pp.collapseState[wbsId]!==false);
         _pp.collapseState[wbsId] = !cur;
-        _pp_applyCollapseState(PP_COLLAPSE_MS > 0);
-        if (_pp.form) anvil.call(_pp.form, '_on_collapse_change', wbsId, !cur);
+        _pp_applyCollapseState(PP_COLLAPSE_MS>0);
+        if (_pp.form) { try{anvil.call(_pp.form,'_on_collapse_change',wbsId,!cur);}catch(e){} }
       };
       window._pp_expandAll = function() {
-        _pp.rowMeta.forEach(function(m) { if (m.wbsId) _pp.collapseState[m.wbsId] = true; });
+        _pp.rowMeta.forEach(function(m){if(m.wbsId)_pp.collapseState[m.wbsId]=true;});
         _pp_applyCollapseState(false);
-        if (_pp.form) anvil.call(_pp.form, '_on_collapse_all', true);
+        if (_pp.form){try{anvil.call(_pp.form,'_on_collapse_all',true);}catch(e){}}
       };
       window._pp_collapseAll = function() {
-        _pp.rowMeta.forEach(function(m) {
-          if (m.wbsId && m.depth === 1) _pp.collapseState[m.wbsId] = false;
-        });
+        _pp.rowMeta.forEach(function(m){if(m.wbsId&&m.depth===1)_pp.collapseState[m.wbsId]=false;});
         _pp_applyCollapseState(false);
-        if (_pp.form) anvil.call(_pp.form, '_on_collapse_all', false);
+        if (_pp.form){try{anvil.call(_pp.form,'_on_collapse_all',false);}catch(e){}}
       };
 
 
-      // ---------------------------------------------------------------------------
-      //  SIDEBAR / DETAILS TOGGLES
-      // ---------------------------------------------------------------------------
+      // =========================================================================
+      //  SIDEBAR / DETAILS TOGGLES  (called from Python fallback)
+      // =========================================================================
       window._pp_toggleSidebar = function(visible) {
         _pp.sidebarVisible = visible;
-        _pp_applyLayout();
-        _pp_rebuildTimescaleHeader();
+        var b=document.getElementById('pp-btn-sidebar');
+        if(b) b.textContent=visible?'✕':'☰';
+        _pp_applyLayout(); _pp_rebuildTimescaleHeader();
       };
       window._pp_toggleDetails = function(visible) {
         _pp.detailsVisible = visible;
+        var b=document.getElementById('pp-btn-details');
+        if(b) b.textContent=visible?'Hide Details':'Show Details';
         _pp_applyLayout();
       };
 
 
-      // ---------------------------------------------------------------------------
+      // =========================================================================
       //  KEYBOARD SHORTCUTS
-      // ---------------------------------------------------------------------------
+      // =========================================================================
       function _pp_setupKeyboard() {
         document.addEventListener('keydown', function(e) {
           if (!e.ctrlKey) return;
-          if (e.key === '=' || e.key === '+') { e.preventDefault(); _pp_expandAll(); }
-          if (e.key === '-')                  { e.preventDefault(); _pp_collapseAll(); }
+          if (e.key==='='||e.key==='+') { e.preventDefault(); _pp_expandAll(); }
+          if (e.key==='-')              { e.preventDefault(); _pp_collapseAll(); }
         });
       }
 
 
-      // ---------------------------------------------------------------------------
-      //  DRAGGABLE SPLITTER
-      // ---------------------------------------------------------------------------
-      function _pp_setupSplitter() {
-        var splitter = document.getElementById('pp-splitter');
-        var colData  = document.getElementById('pp-col-data');
-        if (!splitter || !colData) return;
+        // =========================================================================
+        //  DRAGGABLE SPLITTER
+        // =========================================================================
+        function _pp_setupSplitter() {
+        var sp = document.getElementById('pp-splitter');
+        var cd = document.getElementById('pp-col-data');
+        if (!sp || !cd) return;
+        var dragging=false, sx=0, sw=0;
 
-        var dragging = false, startX = 0, startW = 0;
-
-        splitter.addEventListener('mousedown', function(e) {
-          dragging = true; startX = e.clientX; startW = colData.offsetWidth;
-          document.body.style.cursor = 'col-resize';
-          document.body.style.userSelect = 'none';
-          e.preventDefault();
-        });
+        sp.addEventListener('mousedown', function(e) {
+        dragging=true; sx=e.clientX; sw=cd.offsetWidth;
+        document.body.style.cursor='col-resize';
+        document.body.style.userSelect='none';
+        e.preventDefault();
+      });
         document.addEventListener('mousemove', function(e) {
-          if (!dragging) return;
-          var newW = Math.max(PP_COL_MIN_W, startW + (e.clientX - startX));
-          colData.style.width    = newW + 'px';
-          colData.style.minWidth = newW + 'px';
-          colData.style.maxWidth = newW + 'px';
-          // Keep col-names header in sync
-          var colNames = document.getElementById('pp-col-names');
-          if (colNames) {
-            colNames.style.width    = newW + 'px';
-            colNames.style.minWidth = newW + 'px';
-            colNames.style.maxWidth = newW + 'px';
-          }
-        });
+        if (!dragging) return;
+        var nw = Math.max(PP_COL_MIN_W, sw+(e.clientX-sx));
+        cd.style.width=nw+'px'; cd.style.minWidth=nw+'px'; cd.style.maxWidth=nw+'px';
+        var cn=document.getElementById('pp-col-names');
+        if(cn){cn.style.width=nw+'px';cn.style.minWidth=nw+'px';cn.style.maxWidth=nw+'px';}
+      });
         document.addEventListener('mouseup', function() {
-          if (!dragging) return;
-          dragging = false;
-          document.body.style.cursor = '';
-          document.body.style.userSelect = '';
-          var plotDiv  = document.getElementById('pp-plotly-div');
-          var plotPane = document.getElementById('pp-plot-pane');
-          if (plotDiv && plotPane) Plotly.relayout(plotDiv, {width: plotPane.offsetWidth});
-          _pp_rebuildTimescaleHeader();
-        });
+        if (!dragging) return;
+        dragging=false;
+        document.body.style.cursor=''; document.body.style.userSelect='';
+        var pd=document.getElementById('pp-plotly-div');
+        var pp=document.getElementById('pp-plot-pane');
+        if(pd&&pp) Plotly.relayout(pd,{width:pp.offsetWidth});
+        _pp_rebuildTimescaleHeader();
+      });
       }
 
 
-      // ---------------------------------------------------------------------------
-      //  SCROLL SYNC
-      //  Vertical:   col-data <-> plot-pane
-      //  Horizontal: plot-pane -> header-right (timescale tracks bars)
-      // ---------------------------------------------------------------------------
-      function _pp_setupScrollSync() {
-        var colPane  = document.getElementById('pp-col-data');
-        var plotPane = document.getElementById('pp-plot-pane');
-        var hdrRight = document.getElementById('pp-header-right');
-        if (!colPane || !plotPane) return;
-
-        var syncing = false;
-        colPane.addEventListener('scroll', function() {
-          if (syncing) return; syncing = true;
-          plotPane.scrollTop = colPane.scrollTop;
-          syncing = false;
-        });
-        plotPane.addEventListener('scroll', function() {
-          if (syncing) return; syncing = true;
-          colPane.scrollTop = plotPane.scrollTop;
-          if (hdrRight) hdrRight.scrollLeft = plotPane.scrollLeft;
-          syncing = false;
-        });
+        // =========================================================================
+        //  SCROLL SYNC
+        // =========================================================================
+        function _pp_setupScrollSync() {
+        var cp = document.getElementById('pp-col-data');
+        var pp = document.getElementById('pp-plot-pane');
+        var hr = document.getElementById('pp-header-right');
+        if (!cp || !pp) return;
+        var sync = false;
+        cp.addEventListener('scroll', function(){
+        if(sync)return; sync=true; pp.scrollTop=cp.scrollTop; sync=false;
+      });
+        pp.addEventListener('scroll', function(){
+        if(sync)return; sync=true;
+        cp.scrollTop=pp.scrollTop;
+        if(hr) hr.scrollLeft=pp.scrollLeft;
+        sync=false;
+      });
       }
-    </script>
+
+
+        // =========================================================================
+        //  TIMESCALE ZOOM / PAN  (click+drag in header-right area)
+        //
+        //  Middle of cell → PAN (shift visible date range left/right)
+        //  Near a divider → ZOOM (widen/narrow the visible range on that edge)
+        // =========================================================================
+        function _pp_setupTimescaleDrag() {
+        var hr = document.getElementById('pp-header-right');
+        var mr = document.getElementById('pp-header-months');
+        var wr = document.getElementById('pp-header-weeks');
+        if (!hr) return;
+
+        var st = { active:false, mode:'pan', startX:0, startRange:[0,0], zoomEdge:'right' };
+
+        function nearDivider(e) {
+        var rows = [mr, wr];
+        for (var r=0; r<rows.length; r++) {
+        var row = rows[r]; if (!row) continue;
+        var cells = row.children;
+        var off = row.getBoundingClientRect().left;
+        for (var i=0; i<cells.length; i++) {
+        off += cells[i].offsetWidth;
+        if (Math.abs(e.clientX - off) <= PP_TS_SNAP_PX) return true;
+      }
+      }
+        return false;
+      }
+
+        function curRange() {
+        var pd = document.getElementById('pp-plotly-div');
+        if (pd && pd.layout && pd.layout.xaxis && pd.layout.xaxis.range) {
+        var r = pd.layout.xaxis.range;
+        return [r[0], r[1]];
+      }
+        return [0, _pp.barColCount];
+      }
+
+        // Cursor hint
+        hr.addEventListener('mousemove', function(e) {
+        if (st.active) return;
+        hr.style.cursor = nearDivider(e) ? 'col-resize' : 'grab';
+      });
+
+        hr.addEventListener('mousedown', function(e) {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        st.active = true;
+        st.startX = e.clientX;
+        st.startRange = curRange();
+
+        if (nearDivider(e)) {
+        st.mode = 'zoom';
+        var pp = document.getElementById('pp-plot-pane');
+        var mid = pp ? pp.getBoundingClientRect().left + pp.offsetWidth/2 : 400;
+        st.zoomEdge = (e.clientX < mid) ? 'left' : 'right';
+      } else {
+        st.mode = 'pan';
+      }
+        hr.style.cursor = st.mode==='zoom' ? 'col-resize' : 'grabbing';
+        document.body.style.userSelect = 'none';
+      });
+
+        document.addEventListener('mousemove', function(e) {
+        if (!st.active) return;
+        var pp = document.getElementById('pp-plot-pane');
+        var pw = pp ? pp.offsetWidth : 800;
+        var rw = st.startRange[1] - st.startRange[0];
+        var dx = e.clientX - st.startX;
+        var cd = (dx / pw) * rw;  // column delta
+
+        var nr;
+        if (st.mode === 'pan') {
+        nr = [st.startRange[0] - cd, st.startRange[1] - cd];
+      } else {
+        if (st.zoomEdge === 'left') {
+        nr = [st.startRange[0] + cd, st.startRange[1]];
+      } else {
+        nr = [st.startRange[0], st.startRange[1] + cd];
+      }
+        // Min range = 7 cols (1 week)
+        if (nr[1]-nr[0] < 7) {
+        if (st.zoomEdge==='left') nr[0]=nr[1]-7; else nr[1]=nr[0]+7;
+      }
+      }
+        // Clamp
+        if (nr[0]<0) { if(st.mode==='pan') nr[1]-=nr[0]; nr[0]=0; }
+        if (nr[1]>_pp.barColCount) { if(st.mode==='pan') nr[0]-=(nr[1]-_pp.barColCount); nr[1]=_pp.barColCount; }
+
+        var pd = document.getElementById('pp-plotly-div');
+        if (pd) Plotly.relayout(pd, {'xaxis.range': nr});
+        _pp_rebuildTimescaleFromRange(nr);
+      });
+
+        document.addEventListener('mouseup', function() {
+        if (!st.active) return;
+        st.active = false;
+        hr.style.cursor = 'grab';
+        document.body.style.userSelect = '';
+      });
+      }
+
+        // Rebuild timescale cells for a specific visible range (used during drag)
+        function _pp_rebuildTimescaleFromRange(range) {
+        var pp = document.getElementById('pp-plot-pane');
+        var pw = pp ? pp.offsetWidth : 800;
+        var rw = range[1]-range[0];
+        if (rw <= 0) return;
+        var ppc = pw / rw;
+
+        var mr = document.getElementById('pp-header-months');
+        if (mr) {
+        mr.innerHTML = '';
+        _pp.monthBands.forEach(function(b) {
+        var vs = Math.max(b.startCol, range[0]);
+        var ve = Math.min(b.endCol, range[1]);
+        if (ve<=vs) return;
+        var w = Math.round((ve-vs)*ppc);
+        var d = document.createElement('div');
+        d.style.cssText = 'width:'+w+'px;min-width:'+w+'px;overflow:hidden;'
+        +'white-space:nowrap;padding:3px 4px;font-size:11px;font-weight:bold;'
+        +'color:white;font-family:Arial,sans-serif;'
+        +'border-right:1px solid #0d47a1;box-sizing:border-box;';
+        d.textContent = b.label;
+        mr.appendChild(d);
+      });
+      }
+        var wr = document.getElementById('pp-header-weeks');
+        if (wr) {
+        wr.innerHTML = '';
+        for (var i=0; i<_pp.weekTicks.length; i++) {
+        var t = _pp.weekTicks[i];
+        var nc = i+1<_pp.weekTicks.length ? _pp.weekTicks[i+1].col : _pp.barColCount;
+        var vs = Math.max(t.col, range[0]);
+        var ve = Math.min(nc, range[1]);
+        if (ve<=vs) continue;
+        var w2 = Math.round((ve-vs)*ppc);
+        var d2 = document.createElement('div');
+        d2.style.cssText = 'width:'+w2+'px;min-width:'+w2+'px;overflow:hidden;'
+        +'white-space:nowrap;padding:3px 4px;font-size:10px;'
+        +'color:#bbdefb;font-family:Arial,sans-serif;'
+        +'border-right:1px solid #0d47a1;box-sizing:border-box;';
+        d2.textContent = t.label;
+        wr.appendChild(d2);
+      }
+      }
+      }
+
+        </script>
 package_name: PrestoPlan
 renamed: true
 runtime_options:

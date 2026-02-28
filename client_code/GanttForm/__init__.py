@@ -12,7 +12,7 @@ from .. import client_globals
 # ===========================================================================
 
 ROW_HEIGHT    = 24    # px per Gantt row
-TOOLBAR_H     = 36    # px for the in-shell toolbar strip
+TOOLBAR_H     = 0     # toolbar is now in the nav bar (no separate strip)
 COL_HEADER_H  = 48    # px for timescale header (month row + week row)
 DETAILS_H     = 220   # px for details pane
 NAV_H         = 56    # px for Anvil nav bar
@@ -47,12 +47,13 @@ class GanttForm(GanttFormTemplate):
   """
   Main Gantt viewer form for PrestoPlan.
 
-  All UI (toolbar, sidebar, gantt, details) is rendered as HTML inside
-  pp-shell which is position:fixed below the Anvil nav bar.
-  Anvil YAML only contains: lbl_no_data, pnl_gantt_container, nav bar items.
+  All UI (sidebar, gantt, details) is rendered as HTML inside pp-shell
+  which is position:fixed below the Anvil nav bar.
 
-  pp-shell layout:
-    #pp-toolbar    (36px strip: hamburger, project, import, buttons)
+  Toolbar items (hamburger, project name, Change Project, Hide Details)
+  are injected into the Anvil nav bar by JavaScript _pp_injectNavBarItems().
+
+  pp-shell layout (no toolbar row):
     #pp-main-row   (fills remaining height minus details)
       #pp-sidebar  (collapsible, 220px)
       #pp-gantt-area
@@ -106,13 +107,18 @@ class GanttForm(GanttFormTemplate):
       projects = anvil.server.call('get_user_projects', token)
 
       if not projects:
-        alert('You do not have access to any projects. Please contact your administrator.')
+        alert('You do not have access to any projects. '
+              'Please contact your administrator.')
         return
 
-      project_choices = [(p['project_name'], p['project_id']) for p in projects]
+      project_choices = [
+        (p['project_name'], p['project_id']) for p in projects
+      ]
       pp = ColumnPanel()
       pp.add_component(Label(text='Select Project:', bold=True))
-      dd_proj = DropDown(items=project_choices, placeholder='Select a project...')
+      dd_proj = DropDown(
+        items=project_choices, placeholder='Select a project...'
+      )
       pp.add_component(dd_proj)
       if self._current_project_id:
         dd_proj.selected_value = self._current_project_id
@@ -125,22 +131,29 @@ class GanttForm(GanttFormTemplate):
 
       selected_project_id   = dd_proj.selected_value
       selected_project_name = next(
-        (lbl for lbl, val in project_choices if val == selected_project_id),
+        (lbl for lbl, val in project_choices
+         if val == selected_project_id),
         'Unknown Project'
       )
 
-      imports = anvil.server.call('get_project_imports', token, selected_project_id)
+      imports = anvil.server.call(
+        'get_project_imports', token, selected_project_id
+      )
       if not imports:
-        alert('No imports found for this project. Please upload an XER file first.')
+        alert('No imports found for this project. '
+              'Please upload an XER file first.')
         return
 
       import_choices = [
-        (f"{i.get('import_date', '')} - {i.get('label', 'No label')}", i['import_id'])
+        (f"{i.get('import_date', '')} - {i.get('label', 'No label')}",
+         i['import_id'])
         for i in imports
       ]
       ip = ColumnPanel()
       ip.add_component(Label(text='Select Import:', bold=True))
-      dd_imp = DropDown(items=import_choices, placeholder='Select an import...')
+      dd_imp = DropDown(
+        items=import_choices, placeholder='Select an import...'
+      )
       ip.add_component(dd_imp)
       if self._current_import_id:
         dd_imp.selected_value = self._current_import_id
@@ -155,7 +168,8 @@ class GanttForm(GanttFormTemplate):
       self._current_import_id  = dd_imp.selected_value
       self._project_name       = selected_project_name
       self._import_label       = next(
-        (lbl for lbl, val in import_choices if val == dd_imp.selected_value),
+        (lbl for lbl, val in import_choices
+         if val == dd_imp.selected_value),
         'Unknown Import'
       )
       self._load_gantt()
@@ -205,13 +219,8 @@ class GanttForm(GanttFormTemplate):
     """
     Build and inject the full app HTML into pnl_gantt_container.
 
-    Everything — toolbar, sidebar, gantt, details — lives inside pp-shell
-    so it is all position:fixed and immune to Anvil's layout system.
-
-    The column header row and bar chart timescale header are the same element
-    (pp-col-header) so they always occupy the same vertical space.
-    Column name cells go in the LEFT side of pp-col-header; timescale bands
-    go in the RIGHT side — both 48px tall, perfectly aligned.
+    Toolbar items are NOT rendered here — they're injected into the
+    Anvil nav bar by JS _pp_injectNavBarItems() during _pp_init().
     """
     raw_tasks     = gantt_data.get('tasks', [])
     columns       = gantt_data.get('columns', [])
@@ -227,55 +236,34 @@ class GanttForm(GanttFormTemplate):
     n_rows       = len(tasks)
     chart_height = n_rows * ROW_HEIGHT + 2
 
-    if not hasattr(client_globals, "_collapse_state"): client_globals._collapse_state = {}
+    if not hasattr(client_globals, "_collapse_state"):
+      client_globals._collapse_state = {}
     collapse_state = client_globals._collapse_state
     for task in tasks:
       wbs_id = task.get('wbs_id', '')
-      if wbs_id and task.get('row_type') == 'WBS' and wbs_id not in collapse_state:
+      if (wbs_id
+          and task.get('row_type') == 'WBS'
+          and wbs_id not in collapse_state):
         collapse_state[wbs_id] = True
 
     row_meta       = self._build_row_meta(tasks)
     self._row_meta = row_meta
     col_widths     = [col.get('width', 10) * 7 for col in columns]
 
-    # Header: left side = column names, right side = timescale (both 48px)
-    col_names_html    = self._build_col_names_html(columns, col_widths)
-    col_table_html    = self._build_col_table_html(tasks, columns, col_widths, collapse_state)
-    traces, layout    = self._build_plotly_data(
-      tasks, bar_col_count, ts_start, ts_end, cols_per_week, n_rows, chart_height
+    # Build sub-components
+    col_names_html = self._build_col_names_html(columns, col_widths)
+    col_table_html = self._build_col_table_html(
+      tasks, columns, col_widths, collapse_state
+    )
+    traces, layout = self._build_plotly_data(
+      tasks, bar_col_count, ts_start, ts_end,
+      cols_per_week, n_rows, chart_height
     )
     month_bands, week_ticks = self._build_timescale_bands(
       ts_start, bar_col_count, cols_per_week
     )
 
-    # Toolbar HTML
-    sidebar_icon = '✕' if self._sidebar_visible else '☰'
-    det_btn_text = 'Hide Details' if self._details_visible else 'Show Details'
-    toolbar_html = f"""
-<div id="pp-toolbar" style="
-  display:flex; align-items:center; gap:8px;
-  padding:0 8px; height:{TOOLBAR_H}px; min-height:{TOOLBAR_H}px;
-  background:#1565c0; color:white; flex-shrink:0;">
-  <button id="pp-btn-sidebar" onclick="_pp_onSidebarClick()"
-    style="background:none; border:1px solid rgba(255,255,255,0.5);
-    color:white; font-size:16px; padding:2px 8px; cursor:pointer;
-    border-radius:3px;">{sidebar_icon}</button>
-  <span id="pp-lbl-project" style="font-weight:bold; font-size:13px;">
-    {self._project_name}</span>
-  <span id="pp-lbl-import" style="font-size:12px; opacity:0.8;">
-    {self._import_label}</span>
-  <button onclick="_pp_onChangeProject()"
-    style="background:none; border:1px solid rgba(255,255,255,0.5);
-    color:white; font-size:12px; padding:2px 8px; cursor:pointer;
-    border-radius:3px; margin-left:4px;">Change Project</button>
-  <div style="flex:1;"></div>
-  <button id="pp-btn-details" onclick="_pp_onDetailsClick()"
-    style="background:none; border:1px solid rgba(255,255,255,0.5);
-    color:white; font-size:12px; padding:2px 8px; cursor:pointer;
-    border-radius:3px;">{det_btn_text}</button>
-</div>"""
-
-    # Sidebar HTML
+    # -- Sidebar HTML --
     sidebar_html = """
 <div style="padding:8px; font-family:Arial,sans-serif; font-size:12px;">
   <div style="font-weight:bold; margin-bottom:4px;">Layout:</div>
@@ -287,12 +275,11 @@ class GanttForm(GanttFormTemplate):
   <select id="pp-dd-filters" style="width:100%; margin-bottom:8px;">
     <option value="">No filter applied</option>
   </select>
-  <button onclick="_pp_onGfsToggle()"
-    id="pp-btn-gfs"
+  <button onclick="_pp_onGfsToggle()" id="pp-btn-gfs"
     style="width:100%; text-align:left; background:#e8eaf6;
     border:1px solid #9fa8da; padding:4px 6px; cursor:pointer;
     border-radius:3px; font-size:12px; margin-bottom:4px;">
-    ▶ Grouping / Filtering / Sorting
+    &#9654; Grouping / Filtering / Sorting
   </button>
   <div id="pp-gfs-panel" style="display:none;">
     <div style="font-weight:bold; margin:6px 0 2px;">Status</div>
@@ -314,18 +301,22 @@ class GanttForm(GanttFormTemplate):
   </div>
 </div>"""
 
-    # Details pane HTML - pre-compute tab buttons to avoid f-string nesting issues
+    # -- Details pane HTML --
     det_display = 'flex' if self._details_visible else 'none'
     _tab_defs = [
-      ('general','General'),('status','Status'),('codes','Codes'),
-      ('relationships','Relationships'),('notebook','Notebook'),('udfs','UDFs')
+      ('general','General'), ('status','Status'), ('codes','Codes'),
+      ('relationships','Relationships'), ('notebook','Notebook'),
+      ('udfs','UDFs'),
     ]
     _tab_buttons = ''.join(
-      '<button id="pp-tab-' + t + '" onclick="_pp_onTabClick('' + t + '')"'
-      ' style="padding:3px 10px; font-size:12px; cursor:pointer; border-radius:3px;'
+      '<button id="pp-tab-' + t + '"'
+      ' onclick="_pp_onTabClick(\'' + t + '\')"'
+      ' style="padding:3px 10px; font-size:12px; cursor:pointer;'
+      ' border-radius:3px;'
       ' background:' + ('#1565c0' if t == self._active_tab else '#e0e0e0') + ';'
       ' color:' + ('white' if t == self._active_tab else '#333') + ';'
-      ' border:none; font-weight:' + ('bold' if t == self._active_tab else 'normal') + ';">'
+      ' border:none;'
+      ' font-weight:' + ('bold' if t == self._active_tab else 'normal') + ';">'
       + label + '</button>'
       for t, label in _tab_defs
     )
@@ -346,6 +337,8 @@ class GanttForm(GanttFormTemplate):
       '</div>'
     )
 
+    # -- JS data payload --
+    # Includes projectName/importLabel so JS can inject them into the nav bar
     js_data = json.dumps({
       'traces':        traces,
       'layout':        layout,
@@ -360,12 +353,13 @@ class GanttForm(GanttFormTemplate):
       'navH':          NAV_H,
       'colHeaderH':    COL_HEADER_H,
       'rowH':          ROW_HEIGHT,
+      'projectName':   self._project_name,
+      'importLabel':   self._import_label,
     })
 
+    # -- Shell HTML (no toolbar row) --
     html = f"""
 <div id="pp-shell" style="font-family:Arial,sans-serif; font-size:12px;">
-
-  {toolbar_html}
 
   <div id="pp-main-row">
 
@@ -376,7 +370,6 @@ class GanttForm(GanttFormTemplate):
       <!-- Unified header: col names LEFT, timescale RIGHT, same 48px height -->
       <div id="pp-col-header">
 
-        <!-- Left: column name cells (populated by JS after col-data width is known) -->
         <div id="pp-col-names" style="flex-shrink:0; overflow:hidden;
           display:flex; flex-direction:column; background:#1565c0;">
           <div style="height:24px; border-bottom:1px solid #0d47a1;
@@ -386,17 +379,16 @@ class GanttForm(GanttFormTemplate):
           <div style="height:24px;"></div>
         </div>
 
-        <!-- Splitter spacer (matches pp-splitter width) -->
         <div id="pp-header-splitter-spacer"
           style="width:6px; min-width:6px; flex-shrink:0;
           background:#1565c0; border-right:1px solid #0d47a1;"></div>
 
-        <!-- Right: scrollable timescale (month + week rows) -->
         <div id="pp-header-right" style="flex:1; overflow:hidden;
           display:flex; flex-direction:column; background:#1565c0;">
           <div id="pp-header-months" style="height:24px; min-height:24px;
-            display:flex; overflow:hidden; border-bottom:1px solid #0d47a1;"></div>
-          <div id="pp-header-weeks"  style="height:24px; min-height:24px;
+            display:flex; overflow:hidden;
+            border-bottom:1px solid #0d47a1;"></div>
+          <div id="pp-header-weeks" style="height:24px; min-height:24px;
             display:flex; overflow:hidden;"></div>
         </div>
 
@@ -416,7 +408,8 @@ class GanttForm(GanttFormTemplate):
     </div>
   </div>
 
-  <div id="pp-details" style="display:{det_display}; flex-direction:column;">
+  <div id="pp-details"
+    style="display:{det_display}; flex-direction:column;">
     {details_html}
   </div>
 
@@ -448,12 +441,15 @@ class GanttForm(GanttFormTemplate):
   # --------------------------------------------------------------------------
 
   def _build_row_meta(self, tasks):
-    """Per-row metadata for JS collapse logic."""
+    """Per-row metadata for JS collapse logic and click handling."""
     meta = []
     for idx, task in enumerate(tasks):
       row_type = task.get('row_type', 'TASK')
       wbs_id   = task.get('wbs_id', '')
-      parent_wbs_id = wbs_id if row_type == 'TASK' else task.get('parent_wbs_id', '')
+      parent_wbs_id = (
+        wbs_id if row_type == 'TASK'
+        else task.get('parent_wbs_id', '')
+      )
       meta.append({
         'rowIdx':      idx,
         'rowType':     row_type,
@@ -465,19 +461,16 @@ class GanttForm(GanttFormTemplate):
     return meta
 
   def _build_col_names_html(self, columns, col_widths):
-    """
-    Column name cells for the LEFT side of pp-col-header.
-    24px icon spacer then one cell per column.
-    Must exactly match pp-col-table column widths.
-    """
+    """Column name cells for the LEFT side of pp-col-header."""
     parts = [
       '<div style="width:24px; min-width:24px; flex-shrink:0;'
       ' border-right:1px solid #0d47a1;"></div>'
     ]
     for i, col in enumerate(columns):
       parts.append(
-        f'<div style="width:{col_widths[i]}px; min-width:{col_widths[i]}px;'
-        f' flex-shrink:0; padding:0 6px; overflow:hidden; white-space:nowrap;'
+        f'<div style="width:{col_widths[i]}px;'
+        f' min-width:{col_widths[i]}px; flex-shrink:0;'
+        f' padding:0 6px; overflow:hidden; white-space:nowrap;'
         f' color:white; font-weight:bold; font-size:12px;'
         f' border-right:1px solid #0d47a1;'
         f' display:flex; align-items:center;">'
@@ -485,8 +478,9 @@ class GanttForm(GanttFormTemplate):
       )
     return ''.join(parts)
 
-  def _build_col_table_html(self, tasks, columns, col_widths, collapse_state):
-    """Scrollable column data table. Row height fixed at ROW_HEIGHT px."""
+  def _build_col_table_html(self, tasks, columns, col_widths,
+                             collapse_state):
+    """Scrollable column data table."""
     parts   = []
     total_w = sum(col_widths) + 24
 
@@ -516,34 +510,42 @@ class GanttForm(GanttFormTemplate):
           f' font-weight:bold; color:#1a237e;">'
         )
         parts.append(
-          f'<td style="width:24px; text-align:center; vertical-align:middle;'
-          f' border-bottom:1px solid #ccc; border-right:1px solid #ccc;'
+          f'<td style="width:24px; text-align:center;'
+          f' vertical-align:middle;'
+          f' border-bottom:1px solid #ccc;'
+          f' border-right:1px solid #ccc;'
           f' cursor:pointer; padding:0;"'
           f' onclick="_pp_toggleWbs(\'{wbs_id}\')">'
           f'<span class="pp-wbs-icon"'
-          f' style="font-size:10px; user-select:none;">{icon}</span></td>'
+          f' style="font-size:10px; user-select:none;">'
+          f'{icon}</span></td>'
         )
         for i, val in enumerate(row_data):
-          pad = (f'padding-left:{indent_px+4}px; padding-right:4px;'
-                 if i == 0 else 'padding:2px 4px;')
+          pad = (
+            f'padding-left:{indent_px+4}px; padding-right:4px;'
+            if i == 0 else 'padding:2px 4px;'
+          )
           parts.append(
             f'<td style="width:{col_widths[i]}px; {pad}'
-            f' overflow:hidden; white-space:nowrap; vertical-align:middle;'
-            f' border-bottom:1px solid #ccc; border-right:1px solid #ddd;'
-            f' cursor:pointer;" onclick="_pp_toggleWbs(\'{wbs_id}\')">'
+            f' overflow:hidden; white-space:nowrap;'
+            f' vertical-align:middle;'
+            f' border-bottom:1px solid #ccc;'
+            f' border-right:1px solid #ddd;'
+            f' cursor:pointer;"'
+            f' onclick="_pp_toggleWbs(\'{wbs_id}\')">'
             f'{val if val is not None else ""}</td>'
           )
         parts.append('</tr>')
 
       else:
+        # TASK row — no inline onmouseover/onmouseout
+        # Hover and selection highlight are handled by JS
         indent_px = indent * 12
         parts.append(
           f'<tr data-row-idx="{idx}" data-task-id="{task_id}"'
           f' data-parent-wbs-id="{wbs_id}"'
           f' style="height:{ROW_HEIGHT}px; background:white;'
-          f' color:#222; cursor:pointer;"'
-          f' onmouseover="this.style.background=\'#fff9c4\'"'
-          f' onmouseout="this.style.background=\'white\'">'
+          f' color:#222; cursor:pointer;">'
         )
         parts.append(
           f'<td style="width:24px; border-bottom:1px solid #eee;'
@@ -551,15 +553,18 @@ class GanttForm(GanttFormTemplate):
         )
         for i, val in enumerate(row_data):
           col   = columns[i] if i < len(columns) else {}
-          pad   = (f'padding-left:{indent_px+4}px; padding-right:4px;'
-                   if i == 0 else 'padding:2px 4px;')
+          pad   = (
+            f'padding-left:{indent_px+4}px; padding-right:4px;'
+            if i == 0 else 'padding:2px 4px;'
+          )
           align = 'right' if col.get('duration_field') else 'left'
           disp  = '' if val is None else str(val)
           parts.append(
             f'<td style="width:{col_widths[i]}px; {pad}'
-            f' overflow:hidden; white-space:nowrap; text-align:{align};'
-            f' vertical-align:middle;'
-            f' border-bottom:1px solid #eee; border-right:1px solid #eee;">'
+            f' overflow:hidden; white-space:nowrap;'
+            f' text-align:{align}; vertical-align:middle;'
+            f' border-bottom:1px solid #eee;'
+            f' border-right:1px solid #eee;">'
             f'{disp}</td>'
           )
         parts.append('</tr>')
@@ -589,16 +594,20 @@ class GanttForm(GanttFormTemplate):
           'line': {'width': 0}, 'layer': 'below',
         })
 
-    bar_data = {c: {'x': [], 'y': [], 'text': [], 'customdata': []}
-                for c in BAR_COLOURS}
-    ms_data  = {c: {'x': [], 'y': [], 'text': [], 'customdata': []}
-                for c in MILESTONE_COLOURS}
+    bar_data = {
+      c: {'x': [], 'y': [], 'text': [], 'customdata': []}
+      for c in BAR_COLOURS
+    }
+    ms_data = {
+      c: {'x': [], 'y': [], 'text': [], 'customdata': []}
+      for c in MILESTONE_COLOURS
+    }
     lbl_data = {'x': [], 'y': [], 'text': []}
 
     for row_idx, task in enumerate(tasks):
       if task.get('row_type') != 'TASK':
         continue
-      task_id  = str(task.get('task_id', ''))
+      task_id = str(task.get('task_id', ''))
       for seg in task.get('bar_segments', []):
         stype = seg.get('type', '')
         if stype == 'L':
@@ -611,17 +620,22 @@ class GanttForm(GanttFormTemplate):
           ms_data[stype]['text'].append(task_id)
           ms_data[stype]['customdata'].append(task_id)
         elif stype in BAR_COLOURS:
-          s, e = seg.get('start', 0), seg.get('end', 0)
+          s = seg.get('start', 0)
+          e = seg.get('end', 0)
           bar_data[stype]['x'].extend([s, e, None])
           bar_data[stype]['y'].extend([row_idx, row_idx, None])
           bar_data[stype]['text'].extend([task_id, task_id, ''])
           bar_data[stype]['customdata'].extend([task_id, task_id, ''])
 
     traces = []
-    colour_names = {'1':'Actual','2':'Remaining','3':'Near Critical','4':'Critical'}
+    colour_names = {
+      '1': 'Actual', '2': 'Remaining',
+      '3': 'Near Critical', '4': 'Critical',
+    }
     for code, colour in BAR_COLOURS.items():
       d = bar_data[code]
-      if not d['x']: continue
+      if not d['x']:
+        continue
       traces.append({
         'type': 'scatter', 'mode': 'lines',
         'name': colour_names.get(code, code),
@@ -631,11 +645,14 @@ class GanttForm(GanttFormTemplate):
         'hovertemplate': '%{customdata}<extra></extra>',
       })
 
-    ms_names = {'M1':'Actual Milestone','M2':'Milestone',
-                'M3':'Near-Critical Milestone','M4':'Critical Milestone'}
+    ms_names = {
+      'M1': 'Actual Milestone', 'M2': 'Milestone',
+      'M3': 'Near-Critical Milestone', 'M4': 'Critical Milestone',
+    }
     for code, colour in MILESTONE_COLOURS.items():
       d = ms_data[code]
-      if not d['x']: continue
+      if not d['x']:
+        continue
       traces.append({
         'type': 'scatter', 'mode': 'markers',
         'name': ms_names.get(code, code),
@@ -649,7 +666,8 @@ class GanttForm(GanttFormTemplate):
       traces.append({
         'type': 'scatter', 'mode': 'text',
         'name': 'Labels',
-        'x': lbl_data['x'], 'y': lbl_data['y'], 'text': lbl_data['text'],
+        'x': lbl_data['x'], 'y': lbl_data['y'],
+        'text': lbl_data['text'],
         'textposition': 'middle right',
         'textfont': {'size': 10, 'color': '#333333'},
         'hoverinfo': 'skip', 'showlegend': False,
@@ -693,9 +711,11 @@ class GanttForm(GanttFormTemplate):
     day_off, d = 0, ts_s
     while True:
       col = int(day_off * cpw)
-      if col >= end_col: break
+      if col >= end_col:
+        break
       week_ticks.append({'label': d.strftime('%d'), 'col': col})
-      d += timedelta(days=7); day_off += 7
+      d += timedelta(days=7)
+      day_off += 7
 
     month_bands = []
     cur      = date(ts_s.year, ts_s.month, 1)
@@ -703,8 +723,13 @@ class GanttForm(GanttFormTemplate):
     while cur <= end_date:
       start_off = (cur - ts_s).days
       start_col = max(0, int(start_off * cpw))
-      if start_col >= end_col: break
-      nxt     = date(cur.year + 1, 1, 1) if cur.month == 12 else date(cur.year, cur.month + 1, 1)
+      if start_col >= end_col:
+        break
+      nxt = (
+        date(cur.year + 1, 1, 1)
+        if cur.month == 12
+        else date(cur.year, cur.month + 1, 1)
+      )
       end_off = (nxt - ts_s).days
       month_bands.append({
         'label':    cur.strftime('%b %Y'),
@@ -723,30 +748,13 @@ class GanttForm(GanttFormTemplate):
     """Called from JS Change Project button."""
     self._open_project_selector()
 
-  def _on_sidebar_toggle(self):
-    """Called from JS hamburger button."""
-    self._sidebar_visible = not self._sidebar_visible
-    icon = '✕' if self._sidebar_visible else '☰'
-    anvil.js.call_js('_pp_toggleSidebar', self._sidebar_visible)
-    # Update button text
-    try:
-      anvil.js.call_js('_pp_setHtml', 'pp-btn-sidebar', icon)
-    except Exception:
-      pass
+  def _on_sidebar_toggled(self, visible):
+    """Called from JS after sidebar toggle (state already changed in JS)."""
+    self._sidebar_visible = visible
 
-  def _on_details_toggle(self):
-    """Called from JS Hide/Show Details button."""
-    self._details_visible = not self._details_visible
-    label = 'Hide Details' if self._details_visible else 'Show Details'
-    anvil.js.call_js('_pp_toggleDetails', self._details_visible)
-    try:
-      anvil.js.call_js('_pp_setHtml', 'pp-btn-details', label)
-    except Exception:
-      pass
-
-  def _on_gfs_toggle(self):
-    """Called from JS GFS expand/collapse button."""
-    self._gfs_visible = not self._gfs_visible
+  def _on_details_toggled(self, visible):
+    """Called from JS after details toggle (state already changed in JS)."""
+    self._details_visible = visible
 
   def _on_apply_filters(self):
     """Called from JS Apply Filters button."""
@@ -768,41 +776,44 @@ class GanttForm(GanttFormTemplate):
 
   def _on_gantt_click(self, point_data):
     """
-    Called from JS when a bar or milestone is clicked.
-    Populates details pane from detail_cache (no server call).
+    Called from JS when a bar, milestone, or table row is clicked.
+    Populates details pane from detail_cache (no server call needed).
     """
     try:
       task_id = str(point_data.get('text', '')).strip()
       if not task_id or task_id in ('', 'None', 'undefined', 'null'):
         return
 
+      # Try exact match first, then string-coerced match
       if task_id not in self._detail_cache:
         task_id = next(
-          (k for k in self._detail_cache if str(k) == task_id), None
+          (k for k in self._detail_cache if str(k) == task_id),
+          None
         )
         if not task_id:
           return
 
       self._selected_task_id = task_id
 
+      # Find activity ID and name for the header
       act_id, act_name = '', ''
       if self._gantt_data:
         for t in self._gantt_data.get('tasks', []):
-          if str(t.get('task_id', '')) == task_id and t.get('row_type') == 'TASK':
+          if (str(t.get('task_id', '')) == task_id
+              and t.get('row_type') == 'TASK'):
             row_data = t.get('row_data', [])
             act_id   = str(row_data[0]) if row_data else ''
             act_name = str(row_data[1]) if len(row_data) > 1 else ''
             break
 
-      # Update detail header spans via JS
-      anvil.js.call_js('_pp_setHtml', 'pp-det-id',   act_id)
+      # Update detail header spans
+      anvil.js.call_js('_pp_setHtml', 'pp-det-id', act_id)
       anvil.js.call_js('_pp_setHtml', 'pp-det-name', act_name)
 
-      # Show details if hidden
+      # Show details pane if hidden
       if not self._details_visible:
         self._details_visible = True
         anvil.js.call_js('_pp_toggleDetails', True)
-        anvil.js.call_js('_pp_setHtml', 'pp-btn-details', 'Hide Details')
 
       self._render_details_content(self._active_tab)
 
@@ -811,30 +822,33 @@ class GanttForm(GanttFormTemplate):
 
   def _on_collapse_change(self, wbs_id, expanded):
     """Save WBS collapse state when toggled."""
-    if not hasattr(client_globals, "_collapse_state"): client_globals._collapse_state = {}
+    if not hasattr(client_globals, "_collapse_state"):
+      client_globals._collapse_state = {}
     client_globals._collapse_state[wbs_id] = expanded
 
   def _on_collapse_all(self, expanded):
     """Save collapse state for all WBS nodes."""
     if not self._gantt_data:
       return
+    if not hasattr(client_globals, "_collapse_state"):
+      client_globals._collapse_state = {}
     for task in self._gantt_data.get('tasks', []):
       if task.get('row_type') == 'WBS':
         wbs_id = task.get('wbs_id', '')
         if wbs_id and (expanded or task.get('indent', 0) == 1):
-          if not hasattr(client_globals, "_collapse_state"): client_globals._collapse_state = {}
-    client_globals._collapse_state[wbs_id] = expanded
+          client_globals._collapse_state[wbs_id] = expanded
 
   # --------------------------------------------------------------------------
   #  DETAILS CONTENT RENDERING
   # --------------------------------------------------------------------------
 
   def _render_details_content(self, tab_name):
-    """Build details tab content as HTML string and push to pp-det-content via JS."""
+    """Build details tab HTML and push to pp-det-content via JS."""
     self._active_tab = tab_name
 
-    # Update tab button styles (pre-compute to avoid f-string nesting)
-    _tabs = ['general','status','codes','relationships','notebook','udfs']
+    # Update tab button styles
+    _tabs = ['general', 'status', 'codes',
+             'relationships', 'notebook', 'udfs']
     _tab_js_parts = []
     for t in _tabs:
       bg  = '#1565c0' if t == tab_name else '#e0e0e0'
@@ -846,14 +860,14 @@ class GanttForm(GanttFormTemplate):
         'b.style.color="' + col + '";'
         'b.style.fontWeight="' + fw + '"}})()'
       )
-    tab_buttons_js = '; '.join(_tab_js_parts)
     try:
-      anvil.js.call_js('_pp_execJs', tab_buttons_js)
+      anvil.js.call_js('_pp_execJs', '; '.join(_tab_js_parts))
     except Exception:
       pass
 
     if not self._selected_task_id:
-      html = '<em style="color:#888;">Click an activity in the Gantt chart to see details.</em>'
+      html = ('<em style="color:#888;">'
+              'Click an activity in the Gantt chart to see details.</em>')
       anvil.js.call_js('_pp_setHtml', 'pp-det-content', html)
       return
 
@@ -879,38 +893,41 @@ class GanttForm(GanttFormTemplate):
   def _det_row(self, label, value):
     """Single label+value row for details pane."""
     v = str(value) if value is not None else ''
-    return (f'<div style="display:flex; margin-bottom:2px;">'
-            f'<span style="width:180px; min-width:180px; font-weight:bold;">{label}:</span>'
-            f'<span>{v}</span></div>')
+    return (
+      f'<div style="display:flex; margin-bottom:2px;">'
+      f'<span style="width:180px; min-width:180px;'
+      f' font-weight:bold;">{label}:</span>'
+      f'<span>{v}</span></div>'
+    )
 
   def _html_general(self, g):
     rows = [
-      self._det_row('Calendar',         g.get('calendar_name','')),
-      self._det_row('Activity Type',    g.get('task_type','')),
-      self._det_row('Duration Type',    g.get('duration_type','')),
-      self._det_row('% Complete Type',  g.get('complete_pct_type','')),
-      self._det_row('Orig Duration',    g.get('orig_dur_days','')),
-      self._det_row('Rem Duration',     g.get('rem_dur_days','')),
-      self._det_row('At Comp Duration', g.get('at_comp_dur_days','')),
-      self._det_row('Total Float',      g.get('total_float_days','')),
-      self._det_row('Free Float',       g.get('free_float_days','')),
-      self._det_row('Start',            g.get('start_date','')),
-      self._det_row('Finish',           g.get('finish_date','')),
+      self._det_row('Calendar',         g.get('calendar_name', '')),
+      self._det_row('Activity Type',    g.get('task_type', '')),
+      self._det_row('Duration Type',    g.get('duration_type', '')),
+      self._det_row('% Complete Type',  g.get('complete_pct_type', '')),
+      self._det_row('Orig Duration',    g.get('orig_dur_days', '')),
+      self._det_row('Rem Duration',     g.get('rem_dur_days', '')),
+      self._det_row('At Comp Duration', g.get('at_comp_dur_days', '')),
+      self._det_row('Total Float',      g.get('total_float_days', '')),
+      self._det_row('Free Float',       g.get('free_float_days', '')),
+      self._det_row('Start',            g.get('start_date', '')),
+      self._det_row('Finish',           g.get('finish_date', '')),
     ]
     return ''.join(rows)
 
   def _html_status(self, g):
     rows = [
-      self._det_row('Status',           g.get('status_code','')),
-      self._det_row('Phys % Complete',  g.get('phys_complete_pct','')),
-      self._det_row('Actual Start',     g.get('act_start_date','')),
-      self._det_row('Actual Finish',    g.get('act_end_date','')),
-      self._det_row('Early Start',      g.get('early_start_date','')),
-      self._det_row('Early Finish',     g.get('early_end_date','')),
-      self._det_row('Late Start',       g.get('late_start_date','')),
-      self._det_row('Late Finish',      g.get('late_end_date','')),
-      self._det_row('Target Start',     g.get('target_start_date','')),
-      self._det_row('Target Finish',    g.get('target_end_date','')),
+      self._det_row('Status',          g.get('status_code', '')),
+      self._det_row('Phys % Complete', g.get('phys_complete_pct', '')),
+      self._det_row('Actual Start',    g.get('act_start_date', '')),
+      self._det_row('Actual Finish',   g.get('act_end_date', '')),
+      self._det_row('Early Start',     g.get('early_start_date', '')),
+      self._det_row('Early Finish',    g.get('early_end_date', '')),
+      self._det_row('Late Start',      g.get('late_start_date', '')),
+      self._det_row('Late Finish',     g.get('late_end_date', '')),
+      self._det_row('Target Start',    g.get('target_start_date', '')),
+      self._det_row('Target Finish',   g.get('target_end_date', '')),
     ]
     return ''.join(rows)
 
@@ -918,46 +935,72 @@ class GanttForm(GanttFormTemplate):
     if not codes:
       return '<em style="color:#888;">No activity codes assigned.</em>'
     return ''.join(
-      self._det_row(r[0] if r else '', f'{r[1]}  {r[2]}'.strip() if len(r) > 2 else '')
+      self._det_row(
+        r[0] if r else '',
+        f'{r[1]}  {r[2]}'.strip() if len(r) > 2 else ''
+      )
       for r in codes
     )
 
   def _html_relationships(self, rels):
-    parts = ['<div style="font-weight:bold; margin-bottom:4px;">Predecessors</div>']
+    parts = [
+      '<div style="font-weight:bold; margin-bottom:4px;">Predecessors</div>'
+    ]
     preds = rels.get('predecessors', [])
     if preds:
       for r in preds:
         lag     = f' lag {r["lag_days"]}d' if r.get('lag_days') else ''
         driving = ' ★' if r.get('driving') else ''
-        parts.append(self._det_row(r.get('task_code',''),
-          f'{r.get("rel_type","")} {lag}{driving}  {r.get("task_name","")}'))
+        parts.append(self._det_row(
+          r.get('task_code', ''),
+          f'{r.get("rel_type","")} {lag}{driving}'
+          f'  {r.get("task_name","")}'
+        ))
     else:
-      parts.append('<div style="color:#888; margin-bottom:6px;">None</div>')
-    parts.append('<div style="font-weight:bold; margin:6px 0 4px;">Successors</div>')
+      parts.append(
+        '<div style="color:#888; margin-bottom:6px;">None</div>'
+      )
+
+    parts.append(
+      '<div style="font-weight:bold; margin:6px 0 4px;">Successors</div>'
+    )
     succs = rels.get('successors', [])
     if succs:
       for r in succs:
         lag     = f' lag {r["lag_days"]}d' if r.get('lag_days') else ''
         driving = ' ★' if r.get('driving') else ''
-        parts.append(self._det_row(r.get('task_code',''),
-          f'{r.get("rel_type","")} {lag}{driving}  {r.get("task_name","")}'))
+        parts.append(self._det_row(
+          r.get('task_code', ''),
+          f'{r.get("rel_type","")} {lag}{driving}'
+          f'  {r.get("task_name","")}'
+        ))
     else:
       parts.append('<div style="color:#888;">None</div>')
+
     return ''.join(parts)
 
   def _html_notebook(self, notes):
     if not notes:
       return '<em style="color:#888;">No notebook entries.</em>'
     return ''.join(
-      f'<div style="font-weight:bold;">{n[0] if n else ""}</div>'
-      f'<div style="margin-bottom:6px;">{n[1] if len(n)>1 else ""}</div>'
+      f'<div style="font-weight:bold;">'
+      f'{n[0] if n else ""}</div>'
+      f'<div style="margin-bottom:6px;">'
+      f'{n[1] if len(n) > 1 else ""}</div>'
       for n in notes
     )
 
   def _html_udfs(self, udfs):
     if not udfs:
-      return '<em style="color:#888;">No user-defined fields.</em>'
-    return ''.join(self._det_row(r[0] if r else '', r[1] if len(r)>1 else '') for r in udfs)
+      return ('<em style="color:#888;">'
+              'No user-defined fields.</em>')
+    return ''.join(
+      self._det_row(
+        r[0] if r else '',
+        r[1] if len(r) > 1 else ''
+      )
+      for r in udfs
+    )
 
   # ==========================================================================
   #  LOGOUT
