@@ -46,25 +46,18 @@ native_deps:
       // ===========================================================================
       //  PrestoPlan Gantt - JavaScript layer
       //
-      //  Tunable constants:
-      //    PP_NAV_H       : Anvil nav bar height px
-      //    PP_DETAILS_H   : Details pane height px
-      //    PP_HEADER_H    : Frozen header height px (month row + week row)
-      //    PP_ROW_H       : Gantt row height px
-      //    PP_SIDEBAR_W   : Sidebar width when open px
-      //    PP_COLLAPSE_MS : Collapse animation duration ms (0 = instant)
-      //    PP_COL_MIN_W   : Minimum column table width px
-      //    PP_SPLIT_W     : Splitter handle width px
+      //  All layout constants come from Python via js_data so they stay in sync.
+      //  JS reads: toolbarH, detailsH, navH, colHeaderH, rowH from _pp object.
+      //
+      //  Tunable splitter:
+      //    PP_COL_MIN_W : minimum column table width px
+      //    PP_SPLIT_W   : splitter handle width px
+      //    PP_COLLAPSE_MS : animation duration ms
       // ===========================================================================
 
-      var PP_NAV_H       = 56;
-      var PP_DETAILS_H   = 220;
-      var PP_HEADER_H    = 48;   // 24px month row + 24px week row
-      var PP_ROW_H       = 24;
-      var PP_SIDEBAR_W   = 220;
-      var PP_COLLAPSE_MS = 200;
       var PP_COL_MIN_W   = 120;
       var PP_SPLIT_W     = 6;
+      var PP_COLLAPSE_MS = 200;
 
       var _pp = {
         form:           null,
@@ -74,25 +67,78 @@ native_deps:
         collapseState:  {},
         totalRows:      0,
         detailsVisible: true,
-        sidebarVisible: false,    // hidden by default - opened with hamburger
-        monthBands:     [],       // [{label, startCol, endCol}]
-        weekTicks:      [],       // [{label, col}]
+        sidebarVisible: false,
+        monthBands:     [],
+        weekTicks:      [],
         barColCount:    0,
         colsPerWeek:    7,
+        // layout heights from Python
+        toolbarH:    36,
+        detailsH:    220,
+        navH:        56,
+        colHeaderH:  48,
+        rowH:        24,
       };
 
 
       // ---------------------------------------------------------------------------
-      //  CLEANUP - removes stale pp-shell from previous renders
-      //  Called from Python before injecting new HTML.
-      //  position:fixed elements escape their Anvil container so .clear() alone
-      //  doesn't remove them visually.
+      //  CLEANUP - removes stale pp-shell from a previous render
       // ---------------------------------------------------------------------------
       window._pp_cleanup = function() {
         var old = document.getElementById('pp-shell');
-        if (old && old.parentElement) {
-          old.parentElement.removeChild(old);
-        }
+        if (old && old.parentElement) old.parentElement.removeChild(old);
+      };
+
+
+      // ---------------------------------------------------------------------------
+      //  UTILITY - set innerHTML of an element by id (called from Python)
+      // ---------------------------------------------------------------------------
+      window._pp_setHtml = function(id, html) {
+        var el = document.getElementById(id);
+        if (el) el.innerHTML = html;
+      };
+
+
+      // ---------------------------------------------------------------------------
+      //  UTILITY - execute a JS string (called from Python for tab button styles)
+      // ---------------------------------------------------------------------------
+      window._pp_execJs = function(js) {
+        try { (new Function(js))(); } catch(e) { console.warn('_pp_execJs error:', e); }
+      };
+
+
+      // ---------------------------------------------------------------------------
+      //  TOOLBAR CALLBACKS - called by onclick in toolbar HTML
+      // ---------------------------------------------------------------------------
+      window._pp_onChangeProject = function() {
+        if (_pp.form) anvil.call(_pp.form, '_on_change_project');
+      };
+      window._pp_onSidebarClick = function() {
+        if (_pp.form) anvil.call(_pp.form, '_on_sidebar_toggle');
+      };
+      window._pp_onDetailsClick = function() {
+        if (_pp.form) anvil.call(_pp.form, '_on_details_toggle');
+      };
+      window._pp_onGfsToggle = function() {
+        var panel = document.getElementById('pp-gfs-panel');
+        var btn   = document.getElementById('pp-btn-gfs');
+        if (!panel) return;
+        var open = panel.style.display === 'none' || panel.style.display === '';
+        panel.style.display = open ? 'block' : 'none';
+        if (btn) btn.textContent = (open ? '▼' : '▶') + ' Grouping / Filtering / Sorting';
+        if (_pp.form) anvil.call(_pp.form, '_on_gfs_toggle');
+      };
+      window._pp_onApplyFilters = function() {
+        if (_pp.form) anvil.call(_pp.form, '_on_apply_filters');
+      };
+      window._pp_onClearFilters = function() {
+        if (_pp.form) anvil.call(_pp.form, '_on_clear_filters');
+      };
+      window._pp_onLayoutChange = function(val) {
+        if (_pp.form) anvil.call(_pp.form, '_on_layout_change', val);
+      };
+      window._pp_onTabClick = function(tabName) {
+        if (_pp.form) anvil.call(_pp.form, '_on_tab_click', tabName);
       };
 
 
@@ -113,6 +159,11 @@ native_deps:
         _pp.weekTicks     = data.weekTicks   || [];
         _pp.barColCount   = data.barColCount || 0;
         _pp.colsPerWeek   = data.colsPerWeek || 7;
+        _pp.toolbarH      = data.toolbarH    || 36;
+        _pp.detailsH      = data.detailsH    || 220;
+        _pp.navH          = data.navH        || 56;
+        _pp.colHeaderH    = data.colHeaderH  || 48;
+        _pp.rowH          = data.rowH        || 24;
 
         _pp_applyLayout();
         _pp_renderPlotly();
@@ -121,30 +172,47 @@ native_deps:
         _pp_setupScrollSync();
         _pp_setupSplitter();
         _pp_setupKeyboard();
-        window.addEventListener('resize', function() { _pp_applyLayout(); _pp_rebuildTimescaleHeader(); });
+        window.addEventListener('resize', function() {
+          _pp_applyLayout();
+          _pp_rebuildTimescaleHeader();
+        });
       };
 
 
       // ---------------------------------------------------------------------------
       //  LAYOUT ENGINE
-      //  All sizing is driven from fixed constants so every element fits exactly.
-      //  Called on init, window resize, sidebar toggle, and details toggle.
+      //  pp-shell is position:fixed below the Anvil nav bar.
+      //  Internal structure (top to bottom):
+      //    pp-toolbar    (toolbarH px)
+      //    pp-main-row   (fills remaining height minus detailsH)
+      //      pp-sidebar  (sidebarW or 0)
+      //      pp-gantt-area
+      //        pp-col-header  (colHeaderH px) <-- timescale + col names SAME element
+      //        pp-scroll-body (remaining)
+      //          pp-col-data | pp-splitter | pp-plot-pane
+      //    pp-details    (detailsH px)
       // ---------------------------------------------------------------------------
       function _pp_applyLayout() {
-        var winH   = window.innerHeight;
-        var detH   = _pp.detailsVisible ? PP_DETAILS_H : 0;
-        var sidW   = _pp.sidebarVisible ? PP_SIDEBAR_W : 0;
-        var totalH = winH - PP_NAV_H;
-        var bodyH  = totalH - PP_HEADER_H - detH;
+        var winH     = window.innerHeight;
+        var winW     = window.innerWidth;
+        var navH     = _pp.navH;
+        var toolbarH = _pp.toolbarH;
+        var detH     = _pp.detailsVisible ? _pp.detailsH : 0;
+        var hdrH     = _pp.colHeaderH;
+        var sidW     = _pp.sidebarVisible ? 220 : 0;
 
-        // Shell: fixed below nav bar, fills to bottom of viewport
-        _pp_style('pp-shell', {
+        var shellH   = winH - navH;
+        var mainH    = shellH - toolbarH - detH;
+        var bodyH    = mainH - hdrH;
+
+        // Shell
+        _pp_css('pp-shell', {
           position:      'fixed',
-          top:           PP_NAV_H + 'px',
+          top:           navH + 'px',
           left:          '0',
           right:         '0',
           bottom:        '0',
-          width:         '100%',    // belt-and-suspenders: right:0 alone can be overridden
+          width:         '100%',
           display:       'flex',
           flexDirection: 'column',
           overflow:      'hidden',
@@ -153,67 +221,74 @@ native_deps:
           boxSizing:     'border-box',
         });
 
-        // Main row: sidebar + gantt area side by side
-        _pp_style('pp-main-row', {
+        // Toolbar
+        _pp_css('pp-toolbar', {
+          height:    toolbarH + 'px',
+          minHeight: toolbarH + 'px',
+          flexShrink: '0',
+        });
+
+        // Main row
+        _pp_css('pp-main-row', {
           display:       'flex',
           flexDirection: 'row',
           flex:          '1 1 auto',
-          height:        (totalH - detH) + 'px',
+          height:        mainH + 'px',
+          minHeight:     '0',
           overflow:      'hidden',
         });
 
         // Sidebar
         var sidebar = document.getElementById('pp-sidebar');
         if (sidebar) {
-          sidebar.style.width        = sidW + 'px';
-          sidebar.style.minWidth     = sidW + 'px';
-          sidebar.style.maxWidth     = sidW + 'px';
-          sidebar.style.display      = sidW === 0 ? 'none' : 'flex';
+          sidebar.style.width     = sidW + 'px';
+          sidebar.style.minWidth  = sidW + 'px';
+          sidebar.style.maxWidth  = sidW + 'px';
+          sidebar.style.display   = sidW === 0 ? 'none' : 'flex';
           sidebar.style.flexDirection = 'column';
-          sidebar.style.overflowY    = 'auto';
-          sidebar.style.overflowX    = 'hidden';
-          sidebar.style.borderRight  = '2px solid #cccccc';
-          sidebar.style.background   = '#fafafa';
-          sidebar.style.padding      = '8px';
-          sidebar.style.boxSizing    = 'border-box';
-          sidebar.style.flexShrink   = '0';
+          sidebar.style.overflowY = 'auto';
+          sidebar.style.overflowX = 'hidden';
+          sidebar.style.borderRight = '2px solid #cccccc';
+          sidebar.style.background  = '#fafafa';
+          sidebar.style.flexShrink  = '0';
+          sidebar.style.boxSizing   = 'border-box';
         }
 
-        // Gantt area: frozen header + scroll body stacked vertically
-        _pp_style('pp-gantt-area', {
+        // Gantt area
+        _pp_css('pp-gantt-area', {
           display:       'flex',
           flexDirection: 'column',
           flex:          '1 1 auto',
-          overflow:      'hidden',
           minWidth:      '0',
+          overflow:      'hidden',
         });
 
-        // Timescale header strip (built by _pp_buildTimescaleHeader)
-        _pp_style('pp-col-header', {
+        // Unified header (col names + timescale, same height)
+        _pp_css('pp-col-header', {
           display:      'flex',
           flexDirection: 'row',
-          height:       PP_HEADER_H + 'px',
-          minHeight:    PP_HEADER_H + 'px',
+          height:       hdrH + 'px',
+          minHeight:    hdrH + 'px',
           flexShrink:   '0',
           overflow:     'hidden',
           borderBottom: '2px solid #999',
           background:   '#1565c0',
         });
 
-        // Scroll body: col table + splitter + plot pane
-        _pp_style('pp-scroll-body', {
+        // Scroll body
+        _pp_css('pp-scroll-body', {
           display:       'flex',
           flexDirection: 'row',
           flex:          '1 1 auto',
           height:        bodyH + 'px',
+          minHeight:     '0',
           overflow:      'hidden',
         });
 
-        // Column data pane - width driven by the table inside it, not unbounded
+        // Col data - width driven by the table inside it
         var colTable = document.getElementById('pp-col-table');
-        var colW = colTable ? colTable.offsetWidth : 400;
-        if (colW < PP_COL_MIN_W) colW = PP_COL_MIN_W;
-        _pp_style('pp-col-data', {
+        var colW = colTable ? Math.max(PP_COL_MIN_W, colTable.offsetWidth) : 300;
+        _pp_css('pp-col-data', {
           width:      colW + 'px',
           minWidth:   colW + 'px',
           maxWidth:   colW + 'px',
@@ -223,8 +298,21 @@ native_deps:
           background: 'white',
         });
 
+        // Update pp-col-names width to match
+        var colNames = document.getElementById('pp-col-names');
+        if (colNames) {
+          colNames.style.width    = colW + 'px';
+          colNames.style.minWidth = colW + 'px';
+          colNames.style.maxWidth = colW + 'px';
+        }
+        // Update splitter spacer
+        _pp_css('pp-header-splitter-spacer', {
+          width:    PP_SPLIT_W + 'px',
+          minWidth: PP_SPLIT_W + 'px',
+        });
+
         // Splitter handle
-        _pp_style('pp-splitter', {
+        _pp_css('pp-splitter', {
           width:      PP_SPLIT_W + 'px',
           minWidth:   PP_SPLIT_W + 'px',
           background: '#bdbdbd',
@@ -233,30 +321,30 @@ native_deps:
           zIndex:     '5',
         });
 
-        // Plot pane (Plotly div scrolls inside here)
-        _pp_style('pp-plot-pane', {
-          flex:       '1 1 auto',
-          overflowY:  'auto',
-          overflowX:  'auto',
-          minWidth:   '0',
+        // Plot pane
+        _pp_css('pp-plot-pane', {
+          flex:      '1 1 auto',
+          overflowY: 'auto',
+          overflowX: 'auto',
+          minWidth:  '0',
         });
 
-        // Details pane (fixed height at bottom of shell)
+        // Details pane
         var det = document.getElementById('pp-details');
         if (det) {
-          det.style.height        = PP_DETAILS_H + 'px';
-          det.style.minHeight     = PP_DETAILS_H + 'px';
-          det.style.maxHeight     = PP_DETAILS_H + 'px';
-          det.style.flexShrink    = '0';
-          det.style.display       = _pp.detailsVisible ? 'flex' : 'none';
+          det.style.height     = _pp.detailsH + 'px';
+          det.style.minHeight  = _pp.detailsH + 'px';
+          det.style.maxHeight  = _pp.detailsH + 'px';
+          det.style.flexShrink = '0';
+          det.style.display    = _pp.detailsVisible ? 'flex' : 'none';
           det.style.flexDirection = 'column';
-          det.style.overflowY     = 'hidden';
-          det.style.background    = '#f9f9f9';
-          det.style.borderTop     = '2px solid #cccccc';
+          det.style.overflowY  = 'hidden';
+          det.style.background = '#f9f9f9';
+          det.style.borderTop  = '2px solid #cccccc';
         }
       }
 
-      function _pp_style(id, styles) {
+      function _pp_css(id, styles) {
         var el = document.getElementById(id);
         if (!el) return;
         Object.keys(styles).forEach(function(k) { el.style[k] = styles[k]; });
@@ -265,156 +353,84 @@ native_deps:
 
       // ---------------------------------------------------------------------------
       //  TIMESCALE HEADER
-      //  Two rows above the bar chart, scrolling horizontally with the plot pane:
-      //    Row 1 (24px): Month bands  e.g. "Mar 2026"
-      //    Row 2 (24px): Week dates   e.g. "01", "08", "15"
-      //  Left spacer width matches column table + splitter so dates line up with bars.
+      //  Builds month/week cells into pp-header-months and pp-header-weeks.
+      //  Called after _pp_applyLayout so pp-header-right has its final width.
       // ---------------------------------------------------------------------------
       function _pp_buildTimescaleHeader() {
-        var header = document.getElementById('pp-col-header');
-        if (!header) return;
-
-        var colData = document.getElementById('pp-col-data');
-        var colW    = colData ? colData.offsetWidth : 0;
-        var spacerW = colW + PP_SPLIT_W;
-
-        // Left spacer (same blue as header, no content)
-        var leftDiv = document.createElement('div');
-        leftDiv.id  = 'pp-header-left';
-        leftDiv.style.cssText = [
-          'width:'     + spacerW + 'px',
-          'min-width:' + spacerW + 'px',
-          'flex-shrink:0',
-          'border-right:2px solid #0d47a1',
-          'background:#1565c0',
-        ].join(';');
-
-        // Right side: scrollable timescale, two rows
-        var rightDiv = document.createElement('div');
-        rightDiv.id  = 'pp-header-right';
-        rightDiv.style.cssText = [
-          'flex:1 1 auto',
-          'overflow:hidden',
-          'display:flex',
-          'flex-direction:column',
-          'background:#1565c0',
-        ].join(';');
-
-        // Month row
-        var monthRow = document.createElement('div');
-        monthRow.id  = 'pp-header-months';
-        monthRow.style.cssText = [
-          'display:flex',
-          'flex-direction:row',
-          'height:24px',
-          'min-height:24px',
-          'overflow:hidden',
-          'border-bottom:1px solid #0d47a1',
-        ].join(';');
-
-        // Week row
-        var weekRow = document.createElement('div');
-        weekRow.id  = 'pp-header-weeks';
-        weekRow.style.cssText = [
-          'display:flex',
-          'flex-direction:row',
-          'height:24px',
-          'min-height:24px',
-          'overflow:hidden',
-        ].join(';');
-
-        // Calculate px per column unit
         var plotPane = document.getElementById('pp-plot-pane');
         var plotW    = plotPane ? plotPane.offsetWidth : 800;
         var pxPerCol = _pp.barColCount > 0 ? plotW / _pp.barColCount : 1;
 
-        // Build month cells
+        var monthRow = document.getElementById('pp-header-months');
+        var weekRow  = document.getElementById('pp-header-weeks');
+        if (!monthRow || !weekRow) return;
+
+        monthRow.innerHTML = '';
+        weekRow.innerHTML  = '';
+
         _pp.monthBands.forEach(function(band) {
           var w    = Math.round((band.endCol - band.startCol) * pxPerCol);
           var cell = document.createElement('div');
-          cell.style.cssText = [
-            'width:'        + w + 'px',
-            'min-width:'    + w + 'px',
-            'overflow:hidden',
-            'white-space:nowrap',
-            'padding:3px 4px',
-            'font-size:11px',
-            'font-weight:bold',
-            'color:white',
-            'font-family:Arial,sans-serif',
-            'border-right:1px solid #0d47a1',
-            'box-sizing:border-box',
-          ].join(';');
+          cell.style.cssText = 'width:'+w+'px; min-width:'+w+'px; overflow:hidden;'
+            +' white-space:nowrap; padding:3px 4px; font-size:11px; font-weight:bold;'
+            +' color:white; font-family:Arial,sans-serif;'
+            +' border-right:1px solid #0d47a1; box-sizing:border-box;';
           cell.textContent = band.label;
           monthRow.appendChild(cell);
         });
 
-        // Build week cells
         for (var i = 0; i < _pp.weekTicks.length; i++) {
           var tick    = _pp.weekTicks[i];
-          var nextCol = (i + 1 < _pp.weekTicks.length)
-            ? _pp.weekTicks[i + 1].col
-            : _pp.barColCount;
-          var w2   = Math.round((nextCol - tick.col) * pxPerCol);
-          var cell2 = document.createElement('div');
-          cell2.style.cssText = [
-            'width:'        + w2 + 'px',
-            'min-width:'    + w2 + 'px',
-            'overflow:hidden',
-            'white-space:nowrap',
-            'padding:3px 4px',
-            'font-size:10px',
-            'color:#bbdefb',
-            'font-family:Arial,sans-serif',
-            'border-right:1px solid #0d47a1',
-            'box-sizing:border-box',
-          ].join(';');
+          var nextCol = i + 1 < _pp.weekTicks.length ? _pp.weekTicks[i+1].col : _pp.barColCount;
+          var w2      = Math.round((nextCol - tick.col) * pxPerCol);
+          var cell2   = document.createElement('div');
+          cell2.style.cssText = 'width:'+w2+'px; min-width:'+w2+'px; overflow:hidden;'
+            +' white-space:nowrap; padding:3px 4px; font-size:10px;'
+            +' color:#bbdefb; font-family:Arial,sans-serif;'
+            +' border-right:1px solid #0d47a1; box-sizing:border-box;';
           cell2.textContent = tick.label;
           weekRow.appendChild(cell2);
         }
-
-        rightDiv.appendChild(monthRow);
-        rightDiv.appendChild(weekRow);
-        header.innerHTML = '';
-        header.appendChild(leftDiv);
-        header.appendChild(rightDiv);
       }
 
       function _pp_rebuildTimescaleHeader() {
-        // Update spacer width after splitter drag or resize
-        var leftDiv = document.getElementById('pp-header-left');
-        if (leftDiv) {
-          var colData = document.getElementById('pp-col-data');
-          var colW    = colData ? colData.offsetWidth : 0;
-          var spacerW = colW + PP_SPLIT_W;
-          leftDiv.style.width    = spacerW + 'px';
-          leftDiv.style.minWidth = spacerW + 'px';
+        // After splitter drag: update spacer + recalculate cell widths
+        var colData = document.getElementById('pp-col-data');
+        var colW    = colData ? colData.offsetWidth : 0;
+
+        var spacer = document.getElementById('pp-header-splitter-spacer');
+        if (spacer) {
+          spacer.style.width    = PP_SPLIT_W + 'px';
+          spacer.style.minWidth = PP_SPLIT_W + 'px';
+        }
+        var colNames = document.getElementById('pp-col-names');
+        if (colNames) {
+          colNames.style.width    = colW + 'px';
+          colNames.style.minWidth = colW + 'px';
+          colNames.style.maxWidth = colW + 'px';
         }
 
-        // Recompute cell widths for new plot pane width
         var plotPane = document.getElementById('pp-plot-pane');
         var plotW    = plotPane ? plotPane.offsetWidth : 800;
         var pxPerCol = _pp.barColCount > 0 ? plotW / _pp.barColCount : 1;
 
         var monthRow = document.getElementById('pp-header-months');
         if (monthRow) {
-          var cells = monthRow.children;
-          for (var i = 0; i < cells.length && i < _pp.monthBands.length; i++) {
+          var mcells = monthRow.children;
+          for (var i = 0; i < mcells.length && i < _pp.monthBands.length; i++) {
             var w = Math.round((_pp.monthBands[i].endCol - _pp.monthBands[i].startCol) * pxPerCol);
-            cells[i].style.width    = w + 'px';
-            cells[i].style.minWidth = w + 'px';
+            mcells[i].style.width    = w + 'px';
+            mcells[i].style.minWidth = w + 'px';
           }
         }
-
         var weekRow = document.getElementById('pp-header-weeks');
         if (weekRow) {
-          var cells2 = weekRow.children;
-          for (var j = 0; j < cells2.length && j < _pp.weekTicks.length; j++) {
-            var nextCol = (j + 1 < _pp.weekTicks.length)
-              ? _pp.weekTicks[j + 1].col : _pp.barColCount;
+          var wcells = weekRow.children;
+          for (var j = 0; j < wcells.length && j < _pp.weekTicks.length; j++) {
+            var nextCol = j + 1 < _pp.weekTicks.length ? _pp.weekTicks[j+1].col : _pp.barColCount;
             var w2 = Math.round((nextCol - _pp.weekTicks[j].col) * pxPerCol);
-            cells2[j].style.width    = w2 + 'px';
-            cells2[j].style.minWidth = w2 + 'px';
+            wcells[j].style.width    = w2 + 'px';
+            wcells[j].style.minWidth = w2 + 'px';
           }
         }
       }
@@ -474,22 +490,17 @@ native_deps:
 
           if (animate && !vis && cur) {
             tr.style.transition = 'opacity ' + PP_COLLAPSE_MS + 'ms';
-            tr.style.opacity    = '0';
+            tr.style.opacity = '0';
             setTimeout(function() {
-              tr.style.display    = 'none';
-              tr.style.opacity    = '';
-              tr.style.transition = '';
+              tr.style.display = 'none'; tr.style.opacity = ''; tr.style.transition = '';
             }, PP_COLLAPSE_MS);
           } else if (animate && vis && !cur) {
-            tr.style.display    = '';
-            tr.style.opacity    = '0';
+            tr.style.display = '';
+            tr.style.opacity = '0';
             tr.style.transition = 'opacity ' + PP_COLLAPSE_MS + 'ms';
             setTimeout(function() {
-              tr.style.opacity    = '1';
-              setTimeout(function() {
-                tr.style.opacity    = '';
-                tr.style.transition = '';
-              }, PP_COLLAPSE_MS);
+              tr.style.opacity = '1';
+              setTimeout(function() { tr.style.opacity = ''; tr.style.transition = ''; }, PP_COLLAPSE_MS);
             }, 10);
           } else {
             tr.style.display = vis ? '' : 'none';
@@ -505,13 +516,11 @@ native_deps:
       }
 
       function _pp_syncPlotlyToCollapse() {
-        // Build compressed y-index: only visible rows get a new sequential position
-        var newY = {};
-        var yPos = 0;
+        var newY = {}, yPos = 0;
         for (var i = 0; i < _pp.rowMeta.length; i++) {
           if (_pp_isRowVisible(i)) newY[i] = yPos++;
         }
-        var visCount = yPos;
+        var visCount  = yPos;
 
         var newTraces = JSON.parse(JSON.stringify(_pp.traces));
         newTraces.forEach(function(trace) {
@@ -537,33 +546,27 @@ native_deps:
           if (trace.customdata) trace.customdata = nc;
         });
 
-        // Remap WBS background shapes to compressed positions
         var newLayout = JSON.parse(JSON.stringify(_pp.layout));
         if (newLayout.shapes) {
           newLayout.shapes = newLayout.shapes
-            .filter(function(s) {
-              var ri = Math.round((s.y0 + s.y1) / 2);
-              return newY.hasOwnProperty(ri);
-            })
+            .filter(function(s) { var ri = Math.round((s.y0+s.y1)/2); return newY.hasOwnProperty(ri); })
             .map(function(s) {
-              var ri  = Math.round((s.y0 + s.y1) / 2);
-              var ny2 = newY[ri];
-              return Object.assign({}, s, {y0: ny2 - 0.5, y1: ny2 + 0.5});
+              var ny2 = newY[Math.round((s.y0+s.y1)/2)];
+              return Object.assign({}, s, {y0: ny2-0.5, y1: ny2+0.5});
             });
         }
-
-        var newH = Math.max(PP_ROW_H, visCount * PP_ROW_H);
-        newLayout.height      = newH;
+        var newH = Math.max(_pp.rowH, visCount * _pp.rowH);
+        newLayout.height = newH;
         newLayout.yaxis.range = [visCount, -1];
 
         var plotDiv = document.getElementById('pp-plotly-div');
         if (plotDiv) plotDiv.style.height = newH + 'px';
-        Plotly.react(plotDiv, newTraces, newLayout, {responsive: false, displayModeBar: false});
+        Plotly.react(plotDiv, newTraces, newLayout, {responsive:false, displayModeBar:false});
       }
 
 
       // ---------------------------------------------------------------------------
-      //  WBS TOGGLE / EXPAND ALL / COLLAPSE ALL
+      //  WBS TOGGLE
       // ---------------------------------------------------------------------------
       window._pp_toggleWbs = function(wbsId) {
         var cur = (_pp.collapseState[wbsId] !== false);
@@ -571,13 +574,11 @@ native_deps:
         _pp_applyCollapseState(PP_COLLAPSE_MS > 0);
         if (_pp.form) anvil.call(_pp.form, '_on_collapse_change', wbsId, !cur);
       };
-
       window._pp_expandAll = function() {
         _pp.rowMeta.forEach(function(m) { if (m.wbsId) _pp.collapseState[m.wbsId] = true; });
         _pp_applyCollapseState(false);
         if (_pp.form) anvil.call(_pp.form, '_on_collapse_all', true);
       };
-
       window._pp_collapseAll = function() {
         _pp.rowMeta.forEach(function(m) {
           if (m.wbsId && m.depth === 1) _pp.collapseState[m.wbsId] = false;
@@ -588,9 +589,21 @@ native_deps:
 
 
       // ---------------------------------------------------------------------------
+      //  SIDEBAR / DETAILS TOGGLES
+      // ---------------------------------------------------------------------------
+      window._pp_toggleSidebar = function(visible) {
+        _pp.sidebarVisible = visible;
+        _pp_applyLayout();
+        _pp_rebuildTimescaleHeader();
+      };
+      window._pp_toggleDetails = function(visible) {
+        _pp.detailsVisible = visible;
+        _pp_applyLayout();
+      };
+
+
+      // ---------------------------------------------------------------------------
       //  KEYBOARD SHORTCUTS
-      //    Ctrl+= or Ctrl++  :  expand all
-      //    Ctrl+-            :  collapse all to level 1
       // ---------------------------------------------------------------------------
       function _pp_setupKeyboard() {
         document.addEventListener('keydown', function(e) {
@@ -603,54 +616,42 @@ native_deps:
 
       // ---------------------------------------------------------------------------
       //  DRAGGABLE SPLITTER
-      //  User drags the 6px handle between column table and bar chart.
-      //  Updates column table width in real-time; reflows timescale header and
-      //  Plotly on mouseup.
       // ---------------------------------------------------------------------------
       function _pp_setupSplitter() {
         var splitter = document.getElementById('pp-splitter');
         var colData  = document.getElementById('pp-col-data');
         if (!splitter || !colData) return;
 
-        var dragging = false;
-        var startX   = 0;
-        var startW   = 0;
+        var dragging = false, startX = 0, startW = 0;
 
         splitter.addEventListener('mousedown', function(e) {
-          dragging = true;
-          startX   = e.clientX;
-          startW   = colData.offsetWidth;
-          document.body.style.cursor     = 'col-resize';
+          dragging = true; startX = e.clientX; startW = colData.offsetWidth;
+          document.body.style.cursor = 'col-resize';
           document.body.style.userSelect = 'none';
           e.preventDefault();
         });
-
         document.addEventListener('mousemove', function(e) {
           if (!dragging) return;
           var newW = Math.max(PP_COL_MIN_W, startW + (e.clientX - startX));
           colData.style.width    = newW + 'px';
           colData.style.minWidth = newW + 'px';
           colData.style.maxWidth = newW + 'px';
-          // Update header spacer live
-          var leftDiv = document.getElementById('pp-header-left');
-          if (leftDiv) {
-            var spacerW = newW + PP_SPLIT_W;
-            leftDiv.style.width    = spacerW + 'px';
-            leftDiv.style.minWidth = spacerW + 'px';
+          // Keep col-names header in sync
+          var colNames = document.getElementById('pp-col-names');
+          if (colNames) {
+            colNames.style.width    = newW + 'px';
+            colNames.style.minWidth = newW + 'px';
+            colNames.style.maxWidth = newW + 'px';
           }
         });
-
         document.addEventListener('mouseup', function() {
           if (!dragging) return;
           dragging = false;
-          document.body.style.cursor     = '';
+          document.body.style.cursor = '';
           document.body.style.userSelect = '';
-          // Resize Plotly to new plot pane width
           var plotDiv  = document.getElementById('pp-plotly-div');
           var plotPane = document.getElementById('pp-plot-pane');
-          if (plotDiv && plotPane) {
-            Plotly.relayout(plotDiv, {width: plotPane.offsetWidth});
-          }
+          if (plotDiv && plotPane) Plotly.relayout(plotDiv, {width: plotPane.offsetWidth});
           _pp_rebuildTimescaleHeader();
         });
       }
@@ -658,8 +659,8 @@ native_deps:
 
       // ---------------------------------------------------------------------------
       //  SCROLL SYNC
-      //  Vertical: col-data <-> plot-pane (rows stay aligned)
-      //  Horizontal: plot-pane scroll -> header-right scroll (timescale tracks bars)
+      //  Vertical:   col-data <-> plot-pane
+      //  Horizontal: plot-pane -> header-right (timescale tracks bars)
       // ---------------------------------------------------------------------------
       function _pp_setupScrollSync() {
         var colPane  = document.getElementById('pp-col-data');
@@ -668,13 +669,11 @@ native_deps:
         if (!colPane || !plotPane) return;
 
         var syncing = false;
-
         colPane.addEventListener('scroll', function() {
           if (syncing) return; syncing = true;
           plotPane.scrollTop = colPane.scrollTop;
           syncing = false;
         });
-
         plotPane.addEventListener('scroll', function() {
           if (syncing) return; syncing = true;
           colPane.scrollTop = plotPane.scrollTop;
@@ -682,20 +681,6 @@ native_deps:
           syncing = false;
         });
       }
-
-
-      // ---------------------------------------------------------------------------
-      //  SIDEBAR / DETAILS TOGGLES  (called from Python via anvil.js.call_js)
-      // ---------------------------------------------------------------------------
-      window._pp_toggleSidebar = function(visible) {
-        _pp.sidebarVisible = visible;
-        _pp_applyLayout();
-      };
-
-      window._pp_toggleDetails = function(visible) {
-        _pp.detailsVisible = visible;
-        _pp_applyLayout();
-      };
     </script>
 package_name: PrestoPlan
 renamed: true
