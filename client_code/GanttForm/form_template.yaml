@@ -14,10 +14,6 @@ components:
   - name: lbl_nav_user
     properties: {text: ''}
     type: Label
-  - event_bindings: {click: btn_change_project_click}
-    name: btn_change_project
-    properties: {background: '#ffffff', bold: false, font_size: 12, foreground: '#1565c0', text: Change Project}
-    type: Button
   - event_bindings: {click: btn_logout_click}
     name: btn_logout
     properties: {text: Log Out}
