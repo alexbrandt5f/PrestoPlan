@@ -849,14 +849,6 @@ class GanttForm(GanttFormTemplate):
           client_globals._collapse_state[wid] = expanded
 
   # ==========================================================================
-  #  CHANGE PROJECT (white header button)
-  # ==========================================================================
-
-  def btn_change_project_click(self, **event_args):
-    """Change Project button in the white navbar header."""
-    self._open_project_selector()
-
-  # ==========================================================================
   #  LOGOUT
   # ==========================================================================
 
