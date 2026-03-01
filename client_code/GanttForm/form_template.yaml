@@ -7,10 +7,11 @@ components:
   name: navbar_links
   properties: {}
   type: FlowPanel
-- data_bindings: []
-  layout_properties: {slot: title}
-  name: button_1
-  properties: {icon: menu, text: button_1}
+- layout_properties: {slot: top-left-btn}
+  name: show_settings
+  properties:
+    text: |
+      Show/Hide Settings
   type: Button
 container:
   properties: {html: '@theme:standard-page.html'}
