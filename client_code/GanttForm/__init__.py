@@ -29,9 +29,11 @@ class GanttForm(GanttFormTemplate):
   """
   Main Gantt viewer form for PrestoPlan.
 
-  Toolbar is rendered as a thin HTML strip inside pp-shell.
-  Details pane content is rendered entirely by JavaScript using
-  the detail_cache passed in the js_data payload (no Python round-trip).
+  v6: Toolbar as HTML strip in pp-shell. Detail cache (including enhanced
+  relationships with rem_dur, start/finish dates) sent to JS for
+  fully client-side details rendering. No Python round-trip for clicks
+  or tab changes. Logic chasing and sortable relationship mini-tables
+  all handled in JavaScript.
   """
 
   def __init__(self, **properties):
@@ -63,6 +65,7 @@ class GanttForm(GanttFormTemplate):
   # ==========================================================================
 
   def _open_project_selector(self):
+    """Two-step modal: pick project then import. Loads Gantt on completion."""
     try:
       token    = client_globals.session_token
       projects = anvil.server.call('get_user_projects', token)
@@ -122,6 +125,7 @@ class GanttForm(GanttFormTemplate):
   # ==========================================================================
 
   def _load_gantt(self):
+    """Fetch Gantt data from server and render."""
     if not self._current_project_id or not self._current_import_id:
       return
 
@@ -136,6 +140,7 @@ class GanttForm(GanttFormTemplate):
         self._current_project_id, self._current_import_id
       )
 
+      # --- Handle BlobMedia for large payloads ---
       if isinstance(result, anvil.BlobMedia):
         gantt_data = json.loads(result.get_bytes().decode('utf-8'))
       else:
@@ -159,6 +164,7 @@ class GanttForm(GanttFormTemplate):
   # ==========================================================================
 
   def _render_gantt(self, gantt_data):
+    """Build full app HTML and inject into pnl_gantt_container."""
     raw_tasks     = gantt_data.get('tasks', [])
     columns       = gantt_data.get('columns', [])
     bar_col_count = gantt_data.get('bar_col_count', 0)
@@ -193,7 +199,7 @@ class GanttForm(GanttFormTemplate):
       ts_start, bar_col_count, cols_per_week
     )
 
-    # Toolbar HTML (inside pp-shell)
+    # --- Toolbar HTML (thin strip inside pp-shell) ---
     proj_display = self._project_name or ''
     imp_display  = self._import_label or ''
     toolbar_html = f"""
@@ -217,7 +223,7 @@ class GanttForm(GanttFormTemplate):
     border-radius:3px;">Hide Details</button>
 </div>"""
 
-    # Sidebar HTML
+    # --- Sidebar HTML ---
     sidebar_html = """
 <div style="padding:8px; font-family:Arial,sans-serif; font-size:12px;">
   <div style="font-weight:bold; margin-bottom:4px;">Layout:</div>
@@ -245,7 +251,7 @@ class GanttForm(GanttFormTemplate):
   </div>
 </div>"""
 
-    # Details pane HTML
+    # --- Details pane HTML ---
     det_display = 'flex' if self._details_visible else 'none'
     _tab_defs = [
       ('general','General'), ('status','Status'), ('codes','Codes'),
@@ -280,7 +286,7 @@ class GanttForm(GanttFormTemplate):
       '</div>'
     )
 
-    # JS data — includes detailCache for client-side rendering
+    # --- JS data payload (includes detailCache for client-side rendering) ---
     js_data = json.dumps({
       'traces':        traces,
       'layout':        layout,
@@ -297,6 +303,7 @@ class GanttForm(GanttFormTemplate):
       'detailCache':   self._detail_cache,
     })
 
+    # --- Shell HTML ---
     html = f"""
 <div id="pp-shell" style="font-family:Arial,sans-serif; font-size:12px;">
 
@@ -331,7 +338,7 @@ class GanttForm(GanttFormTemplate):
           <div id="pp-plotly-div"
             style="height:{chart_height}px; min-width:600px;"></div>
         </div>
-    </div>
+      </div>
     </div>
   </div>
 
@@ -388,6 +395,7 @@ class GanttForm(GanttFormTemplate):
     return meta
 
   def _build_col_names_html(self, columns, col_widths):
+    """Column name cells for the LEFT side of pp-col-header."""
     parts = [
       '<div style="width:24px; min-width:24px; flex-shrink:0;'
       ' border-right:1px solid #0d47a1;"></div>'
@@ -404,6 +412,7 @@ class GanttForm(GanttFormTemplate):
     return ''.join(parts)
 
   def _build_col_table_html(self, tasks, columns, col_widths, cs):
+    """Scrollable column data table."""
     parts   = []
     total_w = sum(col_widths) + 24
 
@@ -482,7 +491,8 @@ class GanttForm(GanttFormTemplate):
     return ''.join(parts)
 
   def _build_plotly_data(self, tasks, bar_col_count, ts_start, ts_end,
-                          cols_per_week, n_rows, chart_height):
+                         cols_per_week, n_rows, chart_height):
+    """Build Plotly traces and layout dict."""
     from datetime import date, timedelta
     try:
       ts_s = date.fromisoformat(ts_start)
@@ -578,6 +588,7 @@ class GanttForm(GanttFormTemplate):
     return traces, layout
 
   def _build_timescale_bands(self, ts_start, bar_col_count, cols_per_week):
+    """Month band and week tick data for the JS timescale header."""
     from datetime import date, timedelta
     try:
       ts_s = date.fromisoformat(ts_start)
@@ -615,6 +626,7 @@ class GanttForm(GanttFormTemplate):
   # ==========================================================================
 
   def _on_change_project(self):
+    """Called from JS Change Project button."""
     self._open_project_selector()
 
   def _on_apply_filters(self):
@@ -647,6 +659,7 @@ class GanttForm(GanttFormTemplate):
   # ==========================================================================
 
   def btn_logout_click(self, **event_args):
+    """Log out and return to login form."""
     try:
       token = client_globals.session_token
       if token: anvil.server.call('logout', token)

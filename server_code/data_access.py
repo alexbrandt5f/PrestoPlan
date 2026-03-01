@@ -19,10 +19,19 @@
      strptime calls on large datasets)
    - _date_to_col() accepts native date/datetime objects from psycopg2
    - All helper maps built in one pass each, not per-row queries
+   - Large payloads (>500KB) returned as BlobMedia to avoid Anvil
+     serialisation limit errors
+
+ v6 Changes:
+   - _get_relationship_map: enhanced SQL pulls remain_drtn_hr_cnt and
+     start/finish dates for both pred and succ tasks. Each entry now
+     includes rel_ff_days, rem_dur_days, start_date, finish_date.
+   - get_gantt_data: return wrapped in BlobMedia when JSON > 500KB.
 ===============================================================================
 """
 
 import anvil.server
+import json as _json
 from datetime import datetime, date, timedelta
 from . import db
 from . import auth
@@ -200,24 +209,51 @@ def _get_udf_map(conn, import_id):
   return udf_map
 
 
+# ===========================================================================
+#  RELATIONSHIP MAP  (v6 — enhanced with rem_dur, dates, rel_ff_days)
+# ===========================================================================
+
 def _get_relationship_map(conn, import_id, cal_map):
   """
   Build {task_id: {predecessors: [...], successors: [...]}} from TASKPRED.
-  Lag and float converted from hours to days using predecessor calendar.
+
+  Each predecessor/successor entry contains:
+    task_id, task_code, task_name, rel_type, lag_days, rel_ff_days,
+    driving, rem_dur_days, start_date, finish_date
+
+  Lag, relationship free float, and remaining duration are converted from
+  hours to days using the appropriate calendar (predecessor's calendar for
+  lag/float, each task's own calendar for remaining duration).
+
+  Start/finish dates use the "effective" date: actual if available,
+  otherwise early start/finish, formatted as YYYY-MM-DD strings.
+
+  Driving flag uses rel_ff_days < 0.5 threshold to handle rounding.
   """
   rel_map = {}
   try:
     rows = _query(conn, """
-      SELECT tp.task_id      AS succ_task_id,
+      SELECT tp.task_id                AS succ_task_id,
              tp.pred_task_id,
              tp.pred_type,
              tp.lag_hr_cnt,
              tp.float_path,
-             t_pred.task_code AS pred_task_code,
-             t_pred.task_name AS pred_task_name,
-             t_pred.clndr_id  AS pred_clndr_id,
-             t_succ.task_code AS succ_task_code,
-             t_succ.task_name AS succ_task_name
+             t_pred.task_code          AS pred_task_code,
+             t_pred.task_name          AS pred_task_name,
+             t_pred.clndr_id           AS pred_clndr_id,
+             t_pred.remain_drtn_hr_cnt AS pred_rem_dur_hrs,
+             t_pred.act_start_date     AS pred_act_start,
+             t_pred.act_end_date       AS pred_act_end,
+             t_pred.early_start_date   AS pred_early_start,
+             t_pred.early_end_date     AS pred_early_end,
+             t_succ.task_code          AS succ_task_code,
+             t_succ.task_name          AS succ_task_name,
+             t_succ.clndr_id           AS succ_clndr_id,
+             t_succ.remain_drtn_hr_cnt AS succ_rem_dur_hrs,
+             t_succ.act_start_date     AS succ_act_start,
+             t_succ.act_end_date       AS succ_act_end,
+             t_succ.early_start_date   AS succ_early_start,
+             t_succ.early_end_date     AS succ_early_end
       FROM p6_taskpred tp
       JOIN p6_task t_pred
         ON t_pred.task_id   = tp.pred_task_id
@@ -231,37 +267,75 @@ def _get_relationship_map(conn, import_id, cal_map):
     for row in rows:
       succ_id  = row["succ_task_id"]
       pred_id  = row["pred_task_id"]
+
+      # -- Relationship type (strip PR_ prefix) --
       raw_type = row.get("pred_type") or ""
       rel_type = raw_type.replace("PR_", "") if raw_type.startswith("PR_") else raw_type
-      hrs_per_day = cal_map.get(row.get("pred_clndr_id", ""), 8.0)
 
-      def _to_days(hrs):
+      # -- Hours-per-day from predecessor's calendar (used for lag & float) --
+      pred_cal    = row.get("pred_clndr_id", "")
+      pred_hpd    = cal_map.get(pred_cal, 8.0)
+
+      # -- Hours-per-day from successor's calendar (used for succ rem dur) --
+      succ_cal    = row.get("succ_clndr_id", "")
+      succ_hpd    = cal_map.get(succ_cal, 8.0)
+
+      # -- Helper: convert hours to days safely --
+      def _hrs_to_days(hrs, hpd):
         try:
-          return round(float(hrs or 0) / hrs_per_day, 1)
+          return round(float(hrs or 0) / hpd, 1)
         except (ValueError, TypeError, ZeroDivisionError):
           return 0
 
-      lag_days    = _to_days(row.get("lag_hr_cnt"))
-      rel_ff_days = _to_days(row.get("float_path"))
-      is_driving  = (rel_ff_days == 0)
+      # -- Helper: pick effective date (actual > early), return as string --
+      def _eff_date(act_val, early_val):
+        d = _to_native_date(act_val) or _to_native_date(early_val)
+        return d.strftime("%Y-%m-%d") if d else ""
 
+      # -- Lag and relationship free float in days --
+      lag_days    = _hrs_to_days(row.get("lag_hr_cnt"),  pred_hpd)
+      rel_ff_days = _hrs_to_days(row.get("float_path"), pred_hpd)
+      is_driving  = (rel_ff_days < 0.5)
+
+      # -- Predecessor remaining duration, dates --
+      pred_rem_days = _hrs_to_days(row.get("pred_rem_dur_hrs"), pred_hpd)
+      pred_start    = _eff_date(row.get("pred_act_start"), row.get("pred_early_start"))
+      pred_finish   = _eff_date(row.get("pred_act_end"),   row.get("pred_early_end"))
+
+      # -- Successor remaining duration, dates --
+      succ_rem_days = _hrs_to_days(row.get("succ_rem_dur_hrs"), succ_hpd)
+      succ_start    = _eff_date(row.get("succ_act_start"), row.get("succ_early_start"))
+      succ_finish   = _eff_date(row.get("succ_act_end"),   row.get("succ_early_end"))
+
+      # -- Predecessor entry (shown in successor's predecessor table) --
       pred_entry = {
-        "task_id":   pred_id,
-        "task_code": row.get("pred_task_code", ""),
-        "task_name": row.get("pred_task_name", ""),
-        "rel_type":  rel_type,
-        "lag_days":  lag_days,
-        "driving":   is_driving,
-      }
-      succ_entry = {
-        "task_id":   succ_id,
-        "task_code": row.get("succ_task_code", ""),
-        "task_name": row.get("succ_task_name", ""),
-        "rel_type":  rel_type,
-        "lag_days":  lag_days,
-        "driving":   is_driving,
+        "task_id":      pred_id,
+        "task_code":    row.get("pred_task_code", ""),
+        "task_name":    row.get("pred_task_name", ""),
+        "rel_type":     rel_type,
+        "lag_days":     lag_days,
+        "rel_ff_days":  rel_ff_days,
+        "driving":      is_driving,
+        "rem_dur_days": pred_rem_days,
+        "start_date":   pred_start,
+        "finish_date":  pred_finish,
       }
 
+      # -- Successor entry (shown in predecessor's successor table) --
+      succ_entry = {
+        "task_id":      succ_id,
+        "task_code":    row.get("succ_task_code", ""),
+        "task_name":    row.get("succ_task_name", ""),
+        "rel_type":     rel_type,
+        "lag_days":     lag_days,
+        "rel_ff_days":  rel_ff_days,
+        "driving":      is_driving,
+        "rem_dur_days": succ_rem_days,
+        "start_date":   succ_start,
+        "finish_date":  succ_finish,
+      }
+
+      # -- Add to maps --
       if succ_id not in rel_map:
         rel_map[succ_id] = {"predecessors": [], "successors": []}
       rel_map[succ_id]["predecessors"].append(pred_entry)
@@ -274,6 +348,10 @@ def _get_relationship_map(conn, import_id, cal_map):
     pass
   return rel_map
 
+
+# ===========================================================================
+#  DETAIL MAP BUILDERS  (codes, notebooks, UDFs, task general/status)
+# ===========================================================================
 
 def _get_code_detail_map(conn, import_id):
   """
@@ -569,9 +647,6 @@ def _traverse_wbs(node, tasks_by_wbs, columns, code_map, udf_map,
   Depth-first WBS traversal producing rows in display order.
   Each entry is a 6-tuple:
     (row_data, row_type, indent_level, task_id, wbs_id, parent_wbs_id)
-  row_type is 'WBS', 'TASK', or 'BLANK'.
-  wbs_id and parent_wbs_id are included for every row so the client
-  can map each row to its WBS node for collapse/expand logic.
   """
   result_rows = []
 
@@ -602,7 +677,7 @@ def _traverse_wbs(node, tasks_by_wbs, columns, code_map, udf_map,
       task_row, "TASK", task_indent, tid,
       node_wbs_id, node_parent_wbs_id
     ))
-    # BLANK spacer row (filtered out client-side, kept here for baseline bar space)
+    # BLANK spacer row (filtered out client-side)
     result_rows.append((
       [""] * len(columns), "BLANK", task_indent, "",
       node_wbs_id, node_parent_wbs_id
@@ -683,24 +758,12 @@ def get_gantt_data(token, project_id, import_id,
   """
   Get the full Gantt dataset for a project/import.
 
-  Returns a dict with:
-    tasks:            list of task dicts (row data + metadata)
-    columns:          column config used
-    timescale_start:  ISO date string
-    timescale_end:    ISO date string
-    data_date:        ISO date string
-    bar_col_count:    total bar columns
-    cols_per_week:    columns per calendar week
-    detail_cache:     {task_id: {general, status, codes, relationships,
-                                 notebook, udfs}} for instant detail pane
+  Returns a dict (or BlobMedia for large payloads) with:
+    tasks, columns, timescale_start, timescale_end, data_date,
+    bar_col_count, cols_per_week, detail_cache
 
-  Args:
-    token:               session token
-    project_id:          app-level project_id from project table
-    import_id:           import_log.import_id
-    column_config:       optional list of column dicts; uses defaults if None
-    near_critical_days:  float threshold days for near-critical highlight
-    cols_per_week:       bar chart columns per calendar week
+  Large payloads (>500KB JSON) are wrapped in BlobMedia to avoid
+  Anvil's callable serialisation limit.
   """
   user = auth.validate_session(token)
   if not user:
@@ -774,7 +837,7 @@ def get_gantt_data(token, project_id, import_id,
       task_ids_wbs.append(wbs_id)
       parent_wbs_ids.append(parent_wbs_id)
 
-    # -- Timescale date range from SQL (avoids Python date parsing loop) --
+    # -- Timescale date range from SQL --
     dr = _query(conn, """
       SELECT LEAST(MIN(act_start_date), MIN(early_start_date),
                    MIN(target_start_date), MIN(restart_date)) AS earliest,
@@ -816,7 +879,7 @@ def get_gantt_data(token, project_id, import_id,
     milestone_types = {"TT_Mile", "TT_FinMile", "TT_StartMile"}
 
     def _remaining_code(task):
-      """Return bar colour code: 1=actual, 2=normal, 3=near-critical, 4=critical."""
+      """Return bar colour code: 2=normal, 3=near-critical, 4=critical."""
       if crit_type == "CT_DrivPath":
         if task.get("driving_path_flag") == "Y":
           return 4
@@ -911,12 +974,7 @@ def get_gantt_data(token, project_id, import_id,
     task_detail_map = _get_task_detail_map(conn, import_id, cal_map)
 
     def _safe(val):
-      """
-      Recursively convert a value to plain Python types safe for Anvil
-      serialisation. Converts date/datetime to ISO string, None to '',
-      all other scalars to str if not already int/float/bool.
-      """
-      from datetime import date, datetime
+      """Recursively convert to plain Python types safe for serialisation."""
       if val is None:
         return ''
       if isinstance(val, (datetime, date)):
@@ -952,7 +1010,8 @@ def get_gantt_data(token, project_id, import_id,
         "parent_wbs_id": str(parent_wbs_ids[idx]),
       })
 
-    return {
+    # -- Return result, wrapping in BlobMedia if too large --
+    result = {
       "tasks":           tasks_out,
       "columns":         columns,
       "timescale_start": ts_start.isoformat(),
@@ -962,6 +1021,16 @@ def get_gantt_data(token, project_id, import_id,
       "cols_per_week":   cols_per_week,
       "detail_cache":    detail_cache,
     }
+
+    result_json = _json.dumps(result)
+    if len(result_json) > 500000:
+      import anvil
+      return anvil.BlobMedia(
+        'application/json',
+        result_json.encode('utf-8'),
+        name='gantt_data.json'
+      )
+    return result
 
   finally:
     conn.close()
@@ -976,8 +1045,6 @@ def get_user_projects(token):
   """
   Returns list of projects the user has access to.
   Superusers see all projects. Others see projects via OBS rights.
-
-  Returns: list of dicts [{project_id, project_name, description}]
   """
   user = auth.validate_session(token)
   if not user:
@@ -1013,9 +1080,6 @@ def get_user_projects(token):
 def get_project_imports(token, project_id):
   """
   Returns list of imports for a project, newest first.
-
-  Returns: list of dicts [{import_id, label, file_name,
-                            import_date, data_date, import_status}]
   """
   user = auth.validate_session(token)
   if not user:
@@ -1047,8 +1111,6 @@ def get_actcode_values(token, import_id, actv_code_type_id):
   """
   Returns activity code values for a given code type and import.
   Used by the filter panel activity code value dropdown.
-
-  Returns: list of dicts [{actv_code_id, short_name, actv_code_name}]
   """
   user = auth.validate_session(token)
   if not user:
