@@ -688,16 +688,16 @@ native_deps:
       };
 
 
-      // =========================================================================
-      //  SIDEBAR / DETAILS TOGGLES  (called from Python fallback)
-      // =========================================================================
-      window._pp_toggleSidebar = function(visible) {
+        // =========================================================================
+        //  SIDEBAR / DETAILS TOGGLES  (called from Python fallback)
+        // =========================================================================
+        window._pp_toggleSidebar = function(visible) {
         _pp.sidebarVisible = visible;
         var b=document.getElementById('pp-btn-sidebar');
         if(b) b.textContent=visible?'✕':'☰';
         _pp_applyLayout(); _pp_rebuildTimescaleHeader();
       };
-      window._pp_toggleDetails = function(visible) {
+        window._pp_toggleDetails = function(visible) {
         _pp.detailsVisible = visible;
         var b=document.getElementById('pp-btn-details');
         if(b) b.textContent=visible?'Hide Details':'Show Details';
@@ -705,15 +705,15 @@ native_deps:
       };
 
 
-      // =========================================================================
-      //  KEYBOARD SHORTCUTS
-      // =========================================================================
-      function _pp_setupKeyboard() {
+        // =========================================================================
+        //  KEYBOARD SHORTCUTS
+        // =========================================================================
+        function _pp_setupKeyboard() {
         document.addEventListener('keydown', function(e) {
-          if (!e.ctrlKey) return;
-          if (e.key==='='||e.key==='+') { e.preventDefault(); _pp_expandAll(); }
-          if (e.key==='-')              { e.preventDefault(); _pp_collapseAll(); }
-        });
+        if (!e.ctrlKey) return;
+        if (e.key==='='||e.key==='+') { e.preventDefault(); _pp_expandAll(); }
+        if (e.key==='-')              { e.preventDefault(); _pp_collapseAll(); }
+      });
       }
 
 

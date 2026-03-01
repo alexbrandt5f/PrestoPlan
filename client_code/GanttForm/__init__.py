@@ -479,7 +479,7 @@ class GanttForm(GanttFormTemplate):
     return ''.join(parts)
 
   def _build_col_table_html(self, tasks, columns, col_widths,
-                             collapse_state):
+                            collapse_state):
     """Scrollable column data table."""
     parts   = []
     total_w = sum(col_widths) + 24
