@@ -15,26 +15,67 @@
 
  Performance Notes:
    - Combined project query: proj_id + critical_path_type in one SELECT
-   - Timescale date range via SQL MIN/MAX (eliminates large numbers of
-     strptime calls on large datasets)
+   - Timescale date range via SQL MIN/MAX (eliminates large strptime calls)
    - _date_to_col() accepts native date/datetime objects from psycopg2
    - All helper maps built in one pass each, not per-row queries
    - Large payloads (>500KB) returned as BlobMedia to avoid Anvil
      serialisation limit errors
 
- v6 Changes:
-   - _get_relationship_map: enhanced SQL pulls remain_drtn_hr_cnt and
-     start/finish dates for both pred and succ tasks. Each entry now
-     includes rel_ff_days, rem_dur_days, start_date, finish_date.
-   - get_gantt_data: return wrapped in BlobMedia when JSON > 500KB.
+ Logging:
+   - Set PP_LOG_ENABLED = True for detailed step-by-step timing/diagnostics
+   - Set PP_LOG_ENABLED = False for production (zero overhead)
+   - Logs print to Anvil server console (visible in the Anvil log panel)
+
+ v7 Changes:
+   - SafeEncoder for all JSON serialisation (fixes date serialisation)
+   - Toggleable logging system with timing at every significant step
+   - get_project_imports converts dates to ISO strings
 ===============================================================================
 """
 
 import anvil.server
 import json as _json
+import time as _time
 from datetime import datetime, date, timedelta
 from . import db
 from . import auth
+
+
+# ===========================================================================
+#  LOGGING — set to False for production, True for debugging
+# ===========================================================================
+
+PP_LOG_ENABLED = True
+
+
+def _log(tag, msg):
+  """Print a timestamped log line if logging is enabled."""
+  if PP_LOG_ENABLED:
+    ts = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+    print(f"[PP {ts}] {tag} | {msg}")
+
+
+def _log_timer(tag, label, start_time):
+  """Log elapsed time since start_time. Returns current time for chaining."""
+  if PP_LOG_ENABLED:
+    elapsed = _time.time() - start_time
+    ts = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+    print(f"[PP {ts}] {tag} | {label}: {elapsed:.3f}s")
+  return _time.time()
+
+
+# ===========================================================================
+#  SAFE JSON ENCODER — handles date/datetime from psycopg2
+# ===========================================================================
+
+class _SafeEncoder(_json.JSONEncoder):
+  """Converts date/datetime objects to ISO format strings."""
+  def default(self, obj):
+    if isinstance(obj, datetime):
+      return obj.isoformat()
+    if isinstance(obj, date):
+      return obj.isoformat()
+    return super().default(obj)
 
 
 # ===========================================================================
@@ -138,8 +179,9 @@ def _get_calendar_hours_map(conn, import_id):
         cal_map[row["clndr_id"]] = float(row.get("day_hr_cnt") or 8.0)
       except (ValueError, TypeError):
         cal_map[row["clndr_id"]] = 8.0
-  except Exception:
-    pass
+    _log("cal_map", f"Loaded {len(cal_map)} calendars")
+  except Exception as e:
+    _log("cal_map", f"ERROR: {e}")
   return cal_map
 
 
@@ -168,8 +210,10 @@ def _get_activity_code_map(conn, import_id):
       if tid not in code_map:
         code_map[tid] = {}
       code_map[tid][row["type_name"]] = row.get("value_name", "")
-  except Exception:
-    pass
+    _log("code_map", f"Loaded codes for {len(code_map)} tasks "
+         f"({len(rows)} assignments)")
+  except Exception as e:
+    _log("code_map", f"ERROR: {e}")
   return code_map
 
 
@@ -204,8 +248,10 @@ def _get_udf_map(conn, import_id):
       if tid not in udf_map:
         udf_map[tid] = {}
       udf_map[tid][label] = val
-  except Exception:
-    pass
+    _log("udf_map", f"Loaded UDFs for {len(udf_map)} tasks "
+         f"({len(rows)} values)")
+  except Exception as e:
+    _log("udf_map", f"ERROR: {e}")
   return udf_map
 
 
@@ -264,6 +310,8 @@ def _get_relationship_map(conn, import_id, cal_map):
       WHERE tp.import_id = %s
     """, [import_id])
 
+    _log("rel_map", f"Processing {len(rows)} relationship rows")
+
     for row in rows:
       succ_id  = row["succ_task_id"]
       pred_id  = row["pred_task_id"]
@@ -272,11 +320,11 @@ def _get_relationship_map(conn, import_id, cal_map):
       raw_type = row.get("pred_type") or ""
       rel_type = raw_type.replace("PR_", "") if raw_type.startswith("PR_") else raw_type
 
-      # -- Hours-per-day from predecessor's calendar (used for lag & float) --
+      # -- Hours-per-day from predecessor's calendar --
       pred_cal    = row.get("pred_clndr_id", "")
       pred_hpd    = cal_map.get(pred_cal, 8.0)
 
-      # -- Hours-per-day from successor's calendar (used for succ rem dur) --
+      # -- Hours-per-day from successor's calendar --
       succ_cal    = row.get("succ_clndr_id", "")
       succ_hpd    = cal_map.get(succ_cal, 8.0)
 
@@ -344,8 +392,10 @@ def _get_relationship_map(conn, import_id, cal_map):
         rel_map[pred_id] = {"predecessors": [], "successors": []}
       rel_map[pred_id]["successors"].append(succ_entry)
 
-  except Exception:
-    pass
+    _log("rel_map", f"Built relationship map for {len(rel_map)} tasks")
+
+  except Exception as e:
+    _log("rel_map", f"ERROR: {e}")
   return rel_map
 
 
@@ -384,8 +434,9 @@ def _get_code_detail_map(conn, import_id):
         row.get("value_name", ""),
         row.get("description", ""),
       ])
-  except Exception:
-    pass
+    _log("code_detail", f"Loaded detail codes for {len(detail_map)} tasks")
+  except Exception as e:
+    _log("code_detail", f"ERROR: {e}")
   return detail_map
 
 
@@ -414,8 +465,10 @@ def _get_notebook_map(conn, import_id):
         row.get("topic_name", ""),
         _strip_html(row.get("content", "") or ""),
       ])
-  except Exception:
-    pass
+    _log("notebook", f"Loaded notebooks for {len(nb_map)} tasks "
+         f"({len(rows)} entries)")
+  except Exception as e:
+    _log("notebook", f"ERROR: {e}")
   return nb_map
 
 
@@ -481,8 +534,9 @@ def _get_udf_detail_map(conn, import_id):
       if tid not in detail_map:
         detail_map[tid] = []
       detail_map[tid].append([label, val])
-  except Exception:
-    pass
+    _log("udf_detail", f"Loaded UDF details for {len(detail_map)} tasks")
+  except Exception as e:
+    _log("udf_detail", f"ERROR: {e}")
   return detail_map
 
 
@@ -552,8 +606,10 @@ def _get_task_detail_map(conn, import_id, cal_map):
         "has_actual_finish": bool(act_finish),
         "status_code":       row.get("status_code", ""),
       }
-  except Exception:
-    pass
+
+    _log("task_detail", f"Loaded detail fields for {len(detail_map)} tasks")
+  except Exception as e:
+    _log("task_detail", f"ERROR: {e}")
   return detail_map
 
 
@@ -608,6 +664,8 @@ def _build_wbs_tree(conn, import_id, proj_id):
     ORDER BY seq_num
   """, [import_id, proj_id])
 
+  _log("wbs_tree", f"Loaded {len(rows)} WBS nodes")
+
   nodes = {}
   root  = None
 
@@ -637,6 +695,10 @@ def _build_wbs_tree(conn, import_id, proj_id):
 
   if root:
     _sort_children(root)
+    _log("wbs_tree", f"Root WBS: {root.get('wbs_name','?')} "
+                     f"({len(nodes)} total nodes)")
+  else:
+    _log("wbs_tree", "WARNING: No root WBS node found (proj_node_flag='Y')")
 
   return root, nodes
 
@@ -765,15 +827,19 @@ def get_gantt_data(token, project_id, import_id,
   Large payloads (>500KB JSON) are wrapped in BlobMedia to avoid
   Anvil's callable serialisation limit.
   """
+  t0 = _time.time()
+  _log("get_gantt_data", f"START project_id={project_id} import_id={import_id}")
+
   user = auth.validate_session(token)
   if not user:
     raise Exception("Invalid or expired session. Please log in again.")
 
   columns = column_config if column_config else _default_columns()
+  t1 = _time.time()
 
   conn = db.get_connection()
   try:
-    # -- Get P6 project info --
+    # -- Step 1: Get P6 project info --
     proj_rows = _query(conn, """
       SELECT proj_id, critical_path_type, critical_drtn_hr_cnt,
              last_recalc_date
@@ -791,18 +857,25 @@ def get_gantt_data(token, project_id, import_id,
     except (ValueError, TypeError):
       crit_hrs = 0
     data_date = _to_native_date(proj.get("last_recalc_date"))
+    t1 = _log_timer("get_gantt_data", "Step 1 - P6 project info", t1)
 
-    # -- Build lookup maps --
+    # -- Step 2: Build lookup maps --
     cal_map  = _get_calendar_hours_map(conn, import_id)
-    code_map = _get_activity_code_map(conn, import_id)
-    udf_map  = _get_udf_map(conn, import_id)
+    t1 = _log_timer("get_gantt_data", "Step 2a - calendar map", t1)
 
-    # -- Build WBS tree --
+    code_map = _get_activity_code_map(conn, import_id)
+    t1 = _log_timer("get_gantt_data", "Step 2b - activity code map", t1)
+
+    udf_map  = _get_udf_map(conn, import_id)
+    t1 = _log_timer("get_gantt_data", "Step 2c - UDF map", t1)
+
+    # -- Step 3: Build WBS tree --
     root, all_wbs = _build_wbs_tree(conn, import_id, p6_proj_id)
     if not root:
       raise Exception("No WBS hierarchy found for this project.")
+    t1 = _log_timer("get_gantt_data", "Step 3 - WBS tree", t1)
 
-    # -- Load all tasks, index by wbs_id and task_id --
+    # -- Step 4: Load all tasks, index by wbs_id and task_id --
     task_rows = _query(conn, """
       SELECT * FROM p6_task
       WHERE import_id = %s AND proj_id = %s
@@ -818,7 +891,11 @@ def get_gantt_data(token, project_id, import_id,
       tasks_by_wbs[wbs_id].append(t)
       task_lookup[str(t.get("task_id", ""))] = t
 
-    # -- Traverse WBS tree into ordered rows --
+    _log("get_gantt_data", f"Loaded {len(task_rows)} tasks across "
+                           f"{len(tasks_by_wbs)} WBS groups")
+    t1 = _log_timer("get_gantt_data", "Step 4 - load tasks", t1)
+
+    # -- Step 5: Traverse WBS tree into ordered rows --
     traversal = _traverse_wbs(root, tasks_by_wbs, columns,
                               code_map, udf_map, cal_map)
 
@@ -837,7 +914,11 @@ def get_gantt_data(token, project_id, import_id,
       task_ids_wbs.append(wbs_id)
       parent_wbs_ids.append(parent_wbs_id)
 
-    # -- Timescale date range from SQL --
+    _log("get_gantt_data", f"Traversal produced {len(row_data_list)} rows "
+                           f"(WBS+TASK+BLANK)")
+    t1 = _log_timer("get_gantt_data", "Step 5 - WBS traversal", t1)
+
+    # -- Step 6: Timescale date range from SQL --
     dr = _query(conn, """
       SELECT LEAST(MIN(act_start_date), MIN(early_start_date),
                    MIN(target_start_date), MIN(restart_date)) AS earliest,
@@ -862,6 +943,10 @@ def get_gantt_data(token, project_id, import_id,
     total_bar_cols = int(total_days * cols_per_week / 7)
     ts_start_ord   = ts_start.toordinal()
     cpw_div_7      = cols_per_week / 7.0
+
+    _log("get_gantt_data", f"Timescale: {ts_start} to {ts_end} "
+                           f"({total_days} days, {total_bar_cols} bar cols)")
+    t1 = _log_timer("get_gantt_data", "Step 6 - timescale range", t1)
 
     def _date_to_col(d):
       if d is None:
@@ -899,7 +984,7 @@ def get_gantt_data(token, project_id, import_id,
       tf_days = tf_hrs / hpd if hpd > 0 else 0
       return 3 if tf_days <= near_critical_days else 2
 
-    # -- Build bar segments per row --
+    # -- Step 7: Build bar segments per row --
     bar_segments = []
     for idx, tid in enumerate(task_ids):
       rtype = row_types[idx]
@@ -966,12 +1051,23 @@ def get_gantt_data(token, project_id, import_id,
 
       bar_segments.append(segs)
 
-    # -- Build detail cache for activity details pane --
+    t1 = _log_timer("get_gantt_data", "Step 7 - bar segments", t1)
+
+    # -- Step 8: Build detail cache for activity details pane --
     rel_map         = _get_relationship_map(conn, import_id, cal_map)
+    t1 = _log_timer("get_gantt_data", "Step 8a - relationship map", t1)
+
     code_detail_map = _get_code_detail_map(conn, import_id)
+    t1 = _log_timer("get_gantt_data", "Step 8b - code detail map", t1)
+
     nb_map          = _get_notebook_map(conn, import_id)
+    t1 = _log_timer("get_gantt_data", "Step 8c - notebook map", t1)
+
     udf_detail_map  = _get_udf_detail_map(conn, import_id)
+    t1 = _log_timer("get_gantt_data", "Step 8d - UDF detail map", t1)
+
     task_detail_map = _get_task_detail_map(conn, import_id, cal_map)
+    t1 = _log_timer("get_gantt_data", "Step 8e - task detail map", t1)
 
     def _safe(val):
       """Recursively convert to plain Python types safe for serialisation."""
@@ -997,7 +1093,9 @@ def get_gantt_data(token, project_id, import_id,
         "udfs":          _safe(udf_detail_map.get(tid, [])),
       }
 
-    # -- Build task list for client --
+    t1 = _log_timer("get_gantt_data", "Step 8f - detail cache assembly", t1)
+
+    # -- Step 9: Build task list for client --
     tasks_out = []
     for idx, tid in enumerate(task_ids):
       tasks_out.append({
@@ -1010,7 +1108,9 @@ def get_gantt_data(token, project_id, import_id,
         "parent_wbs_id": str(parent_wbs_ids[idx]),
       })
 
-    # -- Return result, wrapping in BlobMedia if too large --
+    t1 = _log_timer("get_gantt_data", "Step 9 - tasks_out assembly", t1)
+
+    # -- Step 10: Serialise and return --
     result = {
       "tasks":           tasks_out,
       "columns":         columns,
@@ -1022,18 +1122,33 @@ def get_gantt_data(token, project_id, import_id,
       "detail_cache":    detail_cache,
     }
 
-    result_json = _json.dumps(result)
+    result_json = _json.dumps(result, cls=_SafeEncoder)
+    payload_kb  = len(result_json) / 1024
+    _log("get_gantt_data", f"JSON payload: {payload_kb:.1f} KB "
+                           f"({len(tasks_out)} task rows)")
+
     if len(result_json) > 500000:
       import anvil
-      return anvil.BlobMedia(
+      _log("get_gantt_data", "Wrapping in BlobMedia (>500KB)")
+      blob = anvil.BlobMedia(
         'application/json',
         result_json.encode('utf-8'),
         name='gantt_data.json'
       )
+      _log_timer("get_gantt_data", "TOTAL elapsed", t0)
+      return blob
+
+    _log_timer("get_gantt_data", "TOTAL elapsed", t0)
     return result
 
+  except Exception as e:
+    _log("get_gantt_data", f"EXCEPTION: {e}")
+    raise
   finally:
-    conn.close()
+    try:
+      conn.close()
+    except Exception:
+      pass
 
 
 # ===========================================================================
@@ -1046,6 +1161,7 @@ def get_user_projects(token):
   Returns list of projects the user has access to.
   Superusers see all projects. Others see projects via OBS rights.
   """
+  _log("get_user_projects", "START")
   user = auth.validate_session(token)
   if not user:
     raise Exception("Invalid session. Please log in again.")
@@ -1065,10 +1181,12 @@ def get_user_projects(token):
         WHERE r.user_id = %s
         ORDER BY p.project_name
       """, [user["user_id"]])
-    return [dict(r) for r in rows]
+    result = [dict(r) for r in rows]
+    _log("get_user_projects", f"Returning {len(result)} projects")
+    return result
 
   except Exception as e:
-    print(f"[get_user_projects] ERROR: {e}")
+    _log("get_user_projects", f"ERROR: {e}")
     raise Exception(f"Error loading projects: {str(e)}")
 
 
@@ -1080,7 +1198,9 @@ def get_user_projects(token):
 def get_project_imports(token, project_id):
   """
   Returns list of imports for a project, newest first.
+  All date fields are converted to ISO strings for JSON safety.
   """
+  _log("get_project_imports", f"START project_id={project_id}")
   user = auth.validate_session(token)
   if not user:
     raise Exception("Invalid session. Please log in again.")
@@ -1095,10 +1215,20 @@ def get_project_imports(token, project_id):
       WHERE project_id = %s
       ORDER BY import_date DESC
     """, [project_id])
-    return [dict(r) for r in rows]
+    result = []
+    for r in rows:
+      d = dict(r)
+      # Convert date objects to ISO strings for JSON safety
+      for key in ('import_date', 'data_date'):
+        val = d.get(key)
+        if val is not None and hasattr(val, 'isoformat'):
+          d[key] = val.isoformat()
+      result.append(d)
+    _log("get_project_imports", f"Returning {len(result)} imports")
+    return result
 
   except Exception as e:
-    print(f"[get_project_imports] ERROR: {e}")
+    _log("get_project_imports", f"ERROR: {e}")
     raise Exception(f"Error loading imports: {str(e)}")
 
 
@@ -1112,6 +1242,8 @@ def get_actcode_values(token, import_id, actv_code_type_id):
   Returns activity code values for a given code type and import.
   Used by the filter panel activity code value dropdown.
   """
+  _log("get_actcode_values", f"START import_id={import_id} "
+                             f"type_id={actv_code_type_id}")
   user = auth.validate_session(token)
   if not user:
     raise Exception("Invalid session. Please log in again.")
@@ -1126,10 +1258,12 @@ def get_actcode_values(token, import_id, actv_code_type_id):
         AND t.import_id          = %s
       ORDER BY ac.short_name
     """, [actv_code_type_id, import_id])
-    return [dict(r) for r in rows]
+    result = [dict(r) for r in rows]
+    _log("get_actcode_values", f"Returning {len(result)} values")
+    return result
 
   except Exception as e:
-    print(f"[get_actcode_values] ERROR: {e}")
+    _log("get_actcode_values", f"ERROR: {e}")
     raise Exception(f"Error loading activity code values: {str(e)}")
 
 
@@ -1140,6 +1274,7 @@ def get_actcode_values(token, import_id, actv_code_type_id):
 @anvil.server.callable
 def logout(token):
   """Invalidates a session token."""
+  _log("logout", "START")
   if not token:
     return
   try:
@@ -1147,5 +1282,6 @@ def logout(token):
       "UPDATE user_session SET is_active = FALSE WHERE token = %s",
       [token]
     )
+    _log("logout", "Session invalidated")
   except Exception as e:
-    print(f"[logout] ERROR: {e}")
+    _log("logout", f"ERROR: {e}")

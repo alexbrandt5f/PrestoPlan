@@ -4,7 +4,37 @@ import anvil.server
 import anvil.js
 from anvil.js.window import document
 import json
+import time as _time
+from datetime import date as _date, datetime as _datetime
 from .. import client_globals
+
+
+# ===========================================================================
+#  SAFE JSON ENCODER — handles date/datetime objects anywhere in payload
+# ===========================================================================
+
+class _SafeEncoder(json.JSONEncoder):
+  """Custom encoder that converts date/datetime to ISO strings."""
+  def default(self, obj):
+    if isinstance(obj, _datetime):
+      return obj.isoformat()
+    if isinstance(obj, _date):
+      return obj.isoformat()
+    return super().default(obj)
+
+
+# ===========================================================================
+#  CLIENT-SIDE LOGGING — set to False for production
+# ===========================================================================
+
+PP_LOG_ENABLED = True
+
+
+def _log(tag, msg):
+  """Print a timestamped log line to the Anvil client console."""
+  if PP_LOG_ENABLED:
+    ts = _datetime.now().strftime("%H:%M:%S.%f")[:-3]
+    print(f"[PP-Client {ts}] {tag} | {msg}")
 
 
 # ===========================================================================
@@ -37,6 +67,7 @@ class GanttForm(GanttFormTemplate):
   def __init__(self, **properties):
     self.init_components(**properties)
     anvil.js.window._prestoplan_form = self
+    _log("__init__", "GanttForm initialising")
 
     self._details_visible    = True
     self._sidebar_visible    = False
@@ -65,6 +96,7 @@ class GanttForm(GanttFormTemplate):
 
   def _open_project_selector(self):
     """Two-step modal: pick project then import. Loads Gantt on completion."""
+    _log("project_selector", "Opening project selector")
     try:
       token    = client_globals.session_token
       projects = anvil.server.call('get_user_projects', token)
@@ -134,35 +166,60 @@ class GanttForm(GanttFormTemplate):
   def _load_gantt(self):
     """Fetch Gantt data from server and render."""
     if not self._current_project_id or not self._current_import_id:
+      _log("load_gantt", "No project/import selected, skipping")
       return
 
+    _log("load_gantt", f"START project={self._current_project_id} "
+         f"import={self._current_import_id}")
+    t0 = _time.time()
     self.lbl_no_data.text    = 'Loading Gantt chart...'
     self.lbl_no_data.visible = True
     self.pnl_gantt_container.clear()
 
     try:
       token  = client_globals.session_token
+      _log("load_gantt", "Calling get_gantt_data...")
+      t1 = _time.time()
       result = anvil.server.call(
         'get_gantt_data', token,
         self._current_project_id, self._current_import_id
       )
+      elapsed_call = _time.time() - t1
+      _log("load_gantt", f"Server call returned in {elapsed_call:.2f}s")
 
       # --- Handle BlobMedia for large payloads ---
       if isinstance(result, anvil.BlobMedia):
+        _log("load_gantt", "Result is BlobMedia, decoding...")
+        t1 = _time.time()
         gantt_data = json.loads(result.get_bytes().decode('utf-8'))
+        _log("load_gantt", f"BlobMedia decoded in "
+             f"{_time.time()-t1:.2f}s")
       else:
         gantt_data = result
+        _log("load_gantt", "Result is dict (under 500KB)")
 
       if not gantt_data or not gantt_data.get('tasks'):
         self.lbl_no_data.text = 'No tasks found for this import.'
+        _log("load_gantt", "No tasks in response")
         return
+
+      task_count = len(gantt_data.get('tasks', []))
+      detail_count = len(gantt_data.get('detail_cache', {}))
+      _log("load_gantt", f"Data: {task_count} tasks, "
+           f"{detail_count} detail entries")
 
       self._gantt_data   = gantt_data
       self._detail_cache = gantt_data.get('detail_cache', {})
       self.lbl_no_data.visible = False
+
+      _log("load_gantt", "Calling _render_gantt...")
+      t1 = _time.time()
       self._render_gantt(gantt_data)
+      _log("load_gantt", f"Render completed in {_time.time()-t1:.2f}s")
+      _log("load_gantt", f"TOTAL load time: {_time.time()-t0:.2f}s")
 
     except Exception as e:
+      _log("load_gantt", f"EXCEPTION: {e}")
       self.lbl_no_data.text    = f'Error loading Gantt: {str(e)}'
       self.lbl_no_data.visible = True
 
@@ -172,6 +229,7 @@ class GanttForm(GanttFormTemplate):
 
   def _render_gantt(self, gantt_data):
     """Build full app HTML and inject into pnl_gantt_container."""
+    t0 = _time.time()
     raw_tasks     = gantt_data.get('tasks', [])
     columns       = gantt_data.get('columns', [])
     bar_col_count = gantt_data.get('bar_col_count', 0)
@@ -180,6 +238,8 @@ class GanttForm(GanttFormTemplate):
     cols_per_week = gantt_data.get('cols_per_week', 7)
 
     tasks = [t for t in raw_tasks if t.get('row_type') != 'BLANK']
+    _log("render", f"Rendering {len(tasks)} visible rows "
+         f"(filtered from {len(raw_tasks)} raw)")
     if not tasks:
       return
 
@@ -344,6 +404,8 @@ class GanttForm(GanttFormTemplate):
     )
 
     # --- JS data payload ---
+    _log("render", "Serialising JS data payload...")
+    t_json = _time.time()
     js_data = json.dumps({
       'traces':        traces,
       'layout':        layout,
@@ -360,7 +422,9 @@ class GanttForm(GanttFormTemplate):
       'detailCache':   self._detail_cache,
       'importList':    self._import_list,
       'currentImportId': self._current_import_id,
-    })
+    }, cls=_SafeEncoder)
+    _log("render", f"JSON payload: {len(js_data)/1024:.1f} KB "
+         f"in {_time.time()-t_json:.2f}s")
 
     # --- Shell HTML ---
     html = f"""
@@ -432,7 +496,9 @@ class GanttForm(GanttFormTemplate):
     except Exception:
       pass
     anvil.js.window._prestoplan_form = self
+    _log("render", "Injecting HTML into pnl_gantt_container...")
     self.pnl_gantt_container.add_component(HtmlTemplate(html=html))
+    _log("render", f"Render complete. Total: {_time.time()-t0:.2f}s")
 
   # --------------------------------------------------------------------------
   #  HTML BUILDERS
@@ -715,10 +781,12 @@ class GanttForm(GanttFormTemplate):
 
   def _on_change_project(self):
     """Called from JS Change Project button."""
+    _log("callback", "_on_change_project triggered")
     self._open_project_selector()
 
   def _on_change_xer(self, import_id):
     """Called from JS Change XER dropdown."""
+    _log("callback", f"_on_change_xer triggered: import_id={import_id}")
     if not import_id:
       return
     self._current_import_id = import_id
