@@ -44,17 +44,21 @@ native_deps:
     <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
     <script>
       // ===========================================================================
-      //  PrestoPlan Gantt – JavaScript layer  v4
+      //  PrestoPlan Gantt – JavaScript layer  v5
       //
-      //  v4: Nav bar items are Anvil components managed by Python (no JS injection).
-      //       JS handles: layout, Plotly, collapse, splitter, scroll sync,
-      //       table row click → details, timescale pan/zoom (left-edge anchored).
+      //  v5 changes:
+      //    - Detail cache + details rendering entirely in JS (no Python round-trip)
+      //    - Toolbar is a thin HTML strip inside pp-shell (reliable, no Anvil hackery)
+      //    - Zoom = drag in WEEK row (lower timescale), Pan = drag in MONTH row (upper)
+      //    - Zoom anchors left edge, changes right edge
+      //    - WBS row alignment: Plotly y-axis uses -0.5 offset to center on rows
+      //    - Table row click + Plotly click both update details instantly
       // ===========================================================================
 
       var PP_COL_MIN_W   = 120;
       var PP_SPLIT_W     = 6;
       var PP_COLLAPSE_MS = 200;
-      var PP_TS_SNAP_PX  = 8;
+      var TOOLBAR_H      = 32;   // thin toolbar strip
 
       var _pp = {
         form:           null,
@@ -69,13 +73,14 @@ native_deps:
         weekTicks:      [],
         barColCount:    0,
         colsPerWeek:    7,
-        toolbarH:       0,
         detailsH:       220,
         navH:           56,
         colHeaderH:     48,
         rowH:           24,
         selectedRowIdx: -1,
         selectedTaskId: null,
+        detailCache:    {},     // task_id -> {general:{}, codes:[], ...}
+        activeTab:      'general',
       };
 
       // =========================================================================
@@ -92,26 +97,45 @@ native_deps:
       //  UTILITIES
       // =========================================================================
       window._pp_setHtml = function(id, html) {
-        try {
-          var el = document.getElementById(id);
-          if (el) el.innerHTML = html;
-        } catch(e) { console.warn('[_pp_setHtml]', e); }
+        try { var el = document.getElementById(id); if (el) el.innerHTML = html; }
+        catch(e) { console.warn('[_pp_setHtml]', e); }
       };
-
       window._pp_execJs = function(js) {
         try { (new Function(js))(); } catch(e) { console.warn('[_pp_execJs]', e); }
       };
-
       function _pp_css(id, styles) {
-        var el = document.getElementById(id);
-        if (!el) return;
+        var el = document.getElementById(id); if (!el) return;
         Object.keys(styles).forEach(function(k) { el.style[k] = styles[k]; });
+      }
+      function _esc(s) { // HTML escape
+        if (s === null || s === undefined) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
       }
 
       // =========================================================================
-      //  CALLBACKS  (toolbar buttons are Anvil components; these are for
-      //  HTML-based buttons inside sidebar and details pane)
+      //  TOOLBAR CALLBACKS
       // =========================================================================
+      window._pp_onSidebarClick = function() {
+        try {
+          _pp.sidebarVisible = !_pp.sidebarVisible;
+          var btn = document.getElementById('pp-btn-sidebar');
+          if (btn) btn.textContent = _pp.sidebarVisible ? '\u2715' : '\u2630';
+          _pp_applyLayout();
+          _pp_rebuildTimescaleHeader();
+        } catch(e) { console.warn('[_pp_onSidebarClick]', e); }
+      };
+      window._pp_onChangeProject = function() {
+        try { if (_pp.form) anvil.call(_pp.form, '_on_change_project'); }
+        catch(e) { console.warn(e); }
+      };
+      window._pp_onDetailsClick = function() {
+        try {
+          _pp.detailsVisible = !_pp.detailsVisible;
+          var btn = document.getElementById('pp-btn-details');
+          if (btn) btn.textContent = _pp.detailsVisible ? 'Hide Details' : 'Show Details';
+          _pp_applyLayout();
+        } catch(e) { console.warn(e); }
+      };
       window._pp_onGfsToggle = function() {
         try {
           var panel = document.getElementById('pp-gfs-panel');
@@ -120,36 +144,16 @@ native_deps:
           var open = panel.style.display === 'none' || panel.style.display === '';
           panel.style.display = open ? 'block' : 'none';
           if (btn) btn.textContent = (open ? '\u25BC' : '\u25B6') + ' Grouping / Filtering / Sorting';
-        } catch(e) { console.warn('[_pp_onGfsToggle]', e); }
+        } catch(e) { console.warn(e); }
       };
       window._pp_onApplyFilters = function() {
-        try { if (_pp.form) anvil.call(_pp.form, '_on_apply_filters'); }
-        catch(e) { console.warn(e); }
+        try { if (_pp.form) anvil.call(_pp.form, '_on_apply_filters'); } catch(e) {}
       };
       window._pp_onClearFilters = function() {
-        try { if (_pp.form) anvil.call(_pp.form, '_on_clear_filters'); }
-        catch(e) { console.warn(e); }
+        try { if (_pp.form) anvil.call(_pp.form, '_on_clear_filters'); } catch(e) {}
       };
       window._pp_onLayoutChange = function(val) {
-        try { if (_pp.form) anvil.call(_pp.form, '_on_layout_change', val); }
-        catch(e) { console.warn(e); }
-      };
-      window._pp_onTabClick = function(tabName) {
-        try { if (_pp.form) anvil.call(_pp.form, '_on_tab_click', tabName); }
-        catch(e) { console.warn(e); }
-      };
-
-      // =========================================================================
-      //  SIDEBAR / DETAILS TOGGLES  (called from Python)
-      // =========================================================================
-      window._pp_toggleSidebar = function(visible) {
-        _pp.sidebarVisible = visible;
-        _pp_applyLayout();
-        _pp_rebuildTimescaleHeader();
-      };
-      window._pp_toggleDetails = function(visible) {
-        _pp.detailsVisible = visible;
-        _pp_applyLayout();
+        try { if (_pp.form) anvil.call(_pp.form, '_on_layout_change', val); } catch(e) {}
       };
 
       // =========================================================================
@@ -172,11 +176,12 @@ native_deps:
           _pp.weekTicks      = d.weekTicks   || [];
           _pp.barColCount    = d.barColCount || 0;
           _pp.colsPerWeek    = d.colsPerWeek || 7;
-          _pp.toolbarH       = 0;
           _pp.detailsH       = d.detailsH   || 220;
           _pp.navH           = d.navH        || 56;
           _pp.colHeaderH     = d.colHeaderH  || 48;
           _pp.rowH           = d.rowH        || 24;
+          _pp.detailCache    = d.detailCache || {};
+          _pp.activeTab      = 'general';
 
           _pp_applyLayout();
           _pp_renderPlotly();
@@ -198,7 +203,7 @@ native_deps:
       };
 
       // =========================================================================
-      //  TABLE ROW CLICK
+      //  TABLE ROW CLICK + ROW SELECTION
       // =========================================================================
       function _pp_setupTableClickHandlers() {
         var table = document.getElementById('pp-col-table');
@@ -212,7 +217,7 @@ native_deps:
             if (isNaN(rowIdx)) return;
             var meta = _pp.rowMeta[rowIdx];
             if (!meta) return;
-            if (meta.rowType === 'WBS') return;  // WBS rows toggle collapse
+            if (meta.rowType === 'WBS') return;
             var taskId = meta.taskId || tr.getAttribute('data-task-id') || '';
             if (!taskId) return;
             _pp_selectRow(rowIdx, taskId);
@@ -223,29 +228,152 @@ native_deps:
       function _pp_selectRow(rowIdx, taskId) {
         _pp_clearRowHighlight();
         _pp.selectedRowIdx = rowIdx;
-        _pp.selectedTaskId = taskId;
+        _pp.selectedTaskId = String(taskId);
+
+        // Yellow highlight
         var table = document.getElementById('pp-col-table');
         if (table) {
           var tr = table.querySelector('tr[data-row-idx="' + rowIdx + '"]');
-          if (tr) {
-            tr.style.background = '#fff9c4';
-            tr.setAttribute('data-pp-selected', 'true');
-          }
+          if (tr) { tr.style.background = '#fff9c4'; tr.setAttribute('data-pp-selected','true'); }
         }
-        if (_pp.form) {
-          try { anvil.call(_pp.form, '_on_gantt_click', {text: String(taskId)}); }
-          catch(e) { console.warn('[_pp_selectRow]', e); }
-        }
+
+        // Show details (entirely in JS — no Python round-trip)
+        _pp_showDetails(String(taskId));
       }
 
       function _pp_clearRowHighlight() {
         var table = document.getElementById('pp-col-table');
         if (!table) return;
         var prev = table.querySelector('tr[data-pp-selected="true"]');
-        if (prev) {
-          prev.style.background = 'white';
-          prev.removeAttribute('data-pp-selected');
+        if (prev) { prev.style.background='white'; prev.removeAttribute('data-pp-selected'); }
+      }
+
+      // =========================================================================
+      //  DETAILS RENDERING  (entirely in JS)
+      // =========================================================================
+      function _pp_showDetails(taskId) {
+        // Look up in detail cache. Keys might be int or string — try both.
+        var cache = _pp.detailCache[taskId] || _pp.detailCache[parseInt(taskId)] || null;
+
+        // Find activity ID and name from rowMeta
+        var actId = '', actName = '';
+        for (var i = 0; i < _pp.rowMeta.length; i++) {
+          var m = _pp.rowMeta[i];
+          if (String(m.taskId) === taskId && m.rowType !== 'WBS') {
+            actId   = m.activityId || '';
+            actName = m.activityName || '';
+            break;
+          }
         }
+
+        _pp_setHtml('pp-det-id', _esc(actId));
+        _pp_setHtml('pp-det-name', _esc(actName));
+
+        if (!_pp.detailsVisible) {
+          _pp.detailsVisible = true;
+          var btn = document.getElementById('pp-btn-details');
+          if (btn) btn.textContent = 'Hide Details';
+          _pp_applyLayout();
+        }
+
+        _pp_renderTabContent(_pp.activeTab, cache);
+      }
+
+      window._pp_onTabClick = function(tabName) {
+        _pp.activeTab = tabName;
+        // Update tab button styles
+        var tabs = ['general','status','codes','relationships','notebook','udfs'];
+        tabs.forEach(function(t) {
+          var btn = document.getElementById('pp-tab-' + t);
+          if (!btn) return;
+          var active = (t === tabName);
+          btn.style.background  = active ? '#1565c0' : '#e0e0e0';
+          btn.style.color       = active ? 'white' : '#333';
+          btn.style.fontWeight  = active ? 'bold' : 'normal';
+        });
+        // Re-render content
+        var cache = null;
+        if (_pp.selectedTaskId) {
+          cache = _pp.detailCache[_pp.selectedTaskId]
+            || _pp.detailCache[parseInt(_pp.selectedTaskId)]
+            || null;
+        }
+        _pp_renderTabContent(tabName, cache);
+      };
+
+      function _pp_renderTabContent(tabName, cache) {
+        if (!cache) {
+          _pp_setHtml('pp-det-content',
+                      '<em style="color:#888;">Click an activity to see details.</em>');
+          return;
+        }
+        var html = '';
+        var g = cache.general || {};
+        if (tabName === 'general') {
+          html = _dr('Calendar', g.calendar_name)
+            + _dr('Activity Type', g.task_type)
+            + _dr('Duration Type', g.duration_type)
+            + _dr('% Complete Type', g.complete_pct_type)
+            + _dr('Orig Duration', g.orig_dur_days)
+            + _dr('Rem Duration', g.rem_dur_days)
+            + _dr('At Comp Duration', g.at_comp_dur_days)
+            + _dr('Total Float', g.total_float_days)
+            + _dr('Free Float', g.free_float_days)
+            + _dr('Start', g.start_date)
+            + _dr('Finish', g.finish_date);
+        } else if (tabName === 'status') {
+          html = _dr('Status', g.status_code)
+            + _dr('Phys % Complete', g.phys_complete_pct)
+            + _dr('Actual Start', g.act_start_date)
+            + _dr('Actual Finish', g.act_end_date)
+            + _dr('Early Start', g.early_start_date)
+            + _dr('Early Finish', g.early_end_date)
+            + _dr('Late Start', g.late_start_date)
+            + _dr('Late Finish', g.late_end_date)
+            + _dr('Target Start', g.target_start_date)
+            + _dr('Target Finish', g.target_end_date);
+        } else if (tabName === 'codes') {
+          var codes = cache.codes || [];
+          if (!codes.length) { html = '<em style="color:#888;">No activity codes.</em>'; }
+          else { codes.forEach(function(r) {
+            html += _dr(r[0]||'', ((r[1]||'')+' '+(r[2]||'')).trim());
+          }); }
+        } else if (tabName === 'relationships') {
+          var rels = cache.relationships || {};
+          html = '<div style="font-weight:bold;margin-bottom:4px;">Predecessors</div>';
+          var preds = rels.predecessors || [];
+          if (preds.length) { preds.forEach(function(r) {
+            var lag = r.lag_days ? ' lag '+r.lag_days+'d' : '';
+            var drv = r.driving ? ' \u2605' : '';
+            html += _dr(r.task_code||'', (r.rel_type||'')+lag+drv+'  '+(r.task_name||''));
+          }); } else { html += '<div style="color:#888;margin-bottom:6px;">None</div>'; }
+          html += '<div style="font-weight:bold;margin:6px 0 4px;">Successors</div>';
+          var succs = rels.successors || [];
+          if (succs.length) { succs.forEach(function(r) {
+            var lag = r.lag_days ? ' lag '+r.lag_days+'d' : '';
+            var drv = r.driving ? ' \u2605' : '';
+            html += _dr(r.task_code||'', (r.rel_type||'')+lag+drv+'  '+(r.task_name||''));
+          }); } else { html += '<div style="color:#888;">None</div>'; }
+        } else if (tabName === 'notebook') {
+          var notes = cache.notebook || [];
+          if (!notes.length) { html = '<em style="color:#888;">No notebook entries.</em>'; }
+          else { notes.forEach(function(n) {
+            html += '<div style="font-weight:bold;">'+_esc(n[0]||'')+'</div>'
+              + '<div style="margin-bottom:6px;">'+_esc(n[1]||'')+'</div>';
+          }); }
+        } else if (tabName === 'udfs') {
+          var udfs = cache.udfs || [];
+          if (!udfs.length) { html = '<em style="color:#888;">No user-defined fields.</em>'; }
+          else { udfs.forEach(function(r) { html += _dr(r[0]||'', r[1]||''); }); }
+        }
+        _pp_setHtml('pp-det-content', html);
+      }
+
+      // Detail row helper
+      function _dr(label, value) {
+        return '<div style="display:flex;margin-bottom:2px;">'
+          + '<span style="width:180px;min-width:180px;font-weight:bold;">'+_esc(label)+':</span>'
+          + '<span>'+_esc(value)+'</span></div>';
       }
 
       // =========================================================================
@@ -258,13 +386,20 @@ native_deps:
         var hdrH = _pp.colHeaderH;
         var sidW = _pp.sidebarVisible ? 220 : 0;
         var shellH = winH - navH;
-        var mainH  = shellH - detH;
+        var mainH  = shellH - TOOLBAR_H - detH;
         var bodyH  = mainH - hdrH;
 
         _pp_css('pp-shell', {
           position:'fixed', top:navH+'px', left:'0', right:'0', bottom:'0',
           width:'100%', display:'flex', flexDirection:'column',
           overflow:'hidden', zIndex:'10', background:'white', boxSizing:'border-box',
+        });
+        _pp_css('pp-toolbar', {
+          height:TOOLBAR_H+'px', minHeight:TOOLBAR_H+'px', flexShrink:'0',
+          display:'flex', alignItems:'center', gap:'10px',
+          padding:'0 8px', background:'#1565c0', color:'white',
+          fontSize:'12px', fontFamily:'Arial,sans-serif',
+          borderBottom:'1px solid #0d47a1',
         });
         _pp_css('pp-main-row', {
           display:'flex', flexDirection:'row', flex:'1 1 auto',
@@ -273,44 +408,28 @@ native_deps:
         var sb = document.getElementById('pp-sidebar');
         if (sb) {
           sb.style.width=sidW+'px'; sb.style.minWidth=sidW+'px'; sb.style.maxWidth=sidW+'px';
-          sb.style.display = sidW===0 ? 'none' : 'flex';
-          sb.style.flexDirection='column'; sb.style.overflowY='auto'; sb.style.overflowX='hidden';
+          sb.style.display=sidW===0?'none':'flex'; sb.style.flexDirection='column';
+          sb.style.overflowY='auto'; sb.style.overflowX='hidden';
           sb.style.borderRight='2px solid #ccc'; sb.style.background='#fafafa';
           sb.style.flexShrink='0'; sb.style.boxSizing='border-box';
         }
-        _pp_css('pp-gantt-area', {
-          display:'flex', flexDirection:'column', flex:'1 1 auto', minWidth:'0', overflow:'hidden',
-        });
-        _pp_css('pp-col-header', {
-          display:'flex', flexDirection:'row',
-          height:hdrH+'px', minHeight:hdrH+'px', flexShrink:'0',
-          overflow:'hidden', borderBottom:'2px solid #999', background:'#1565c0',
-        });
-        _pp_css('pp-scroll-body', {
-          display:'flex', flexDirection:'row', flex:'1 1 auto',
-          height:bodyH+'px', minHeight:'0', overflow:'hidden',
-        });
+        _pp_css('pp-gantt-area', { display:'flex', flexDirection:'column', flex:'1 1 auto', minWidth:'0', overflow:'hidden' });
+        _pp_css('pp-col-header', { display:'flex', flexDirection:'row', height:hdrH+'px', minHeight:hdrH+'px', flexShrink:'0', overflow:'hidden', borderBottom:'2px solid #999', background:'#1565c0' });
+        _pp_css('pp-scroll-body', { display:'flex', flexDirection:'row', flex:'1 1 auto', height:bodyH+'px', minHeight:'0', overflow:'hidden' });
         var colTable = document.getElementById('pp-col-table');
         var colW = colTable ? Math.max(PP_COL_MIN_W, colTable.offsetWidth) : 300;
-        _pp_css('pp-col-data', {
-          width:colW+'px', minWidth:colW+'px', maxWidth:colW+'px',
-          overflowY:'auto', overflowX:'hidden', flexShrink:'0', background:'white',
-        });
+        _pp_css('pp-col-data', { width:colW+'px', minWidth:colW+'px', maxWidth:colW+'px', overflowY:'auto', overflowX:'hidden', flexShrink:'0', background:'white' });
         var cn = document.getElementById('pp-col-names');
         if (cn) { cn.style.width=colW+'px'; cn.style.minWidth=colW+'px'; cn.style.maxWidth=colW+'px'; }
         _pp_css('pp-header-splitter-spacer', { width:PP_SPLIT_W+'px', minWidth:PP_SPLIT_W+'px' });
-        _pp_css('pp-splitter', {
-          width:PP_SPLIT_W+'px', minWidth:PP_SPLIT_W+'px',
-          background:'#bdbdbd', cursor:'col-resize', flexShrink:'0', zIndex:'5',
-        });
+        _pp_css('pp-splitter', { width:PP_SPLIT_W+'px', minWidth:PP_SPLIT_W+'px', background:'#bdbdbd', cursor:'col-resize', flexShrink:'0', zIndex:'5' });
         _pp_css('pp-plot-pane', { flex:'1 1 auto', overflowY:'auto', overflowX:'auto', minWidth:'0' });
         var det = document.getElementById('pp-details');
         if (det) {
           det.style.height=_pp.detailsH+'px'; det.style.minHeight=_pp.detailsH+'px';
           det.style.maxHeight=_pp.detailsH+'px'; det.style.flexShrink='0';
-          det.style.display = _pp.detailsVisible ? 'flex' : 'none';
-          det.style.flexDirection='column'; det.style.overflowY='hidden';
-          det.style.background='#f9f9f9'; det.style.borderTop='2px solid #ccc';
+          det.style.display=_pp.detailsVisible?'flex':'none'; det.style.flexDirection='column';
+          det.style.overflowY='hidden'; det.style.background='#f9f9f9'; det.style.borderTop='2px solid #ccc';
         }
       }
 
@@ -318,317 +437,169 @@ native_deps:
       //  TIMESCALE HEADER
       // =========================================================================
       function _pp_buildTimescaleHeader() {
-        var pp = document.getElementById('pp-plot-pane');
-        var w  = pp ? pp.offsetWidth : 800;
-        var ppc = _pp.barColCount > 0 ? w / _pp.barColCount : 1;
-        var mr = document.getElementById('pp-header-months');
-        var wr = document.getElementById('pp-header-weeks');
-        if (!mr || !wr) return;
-        mr.innerHTML = ''; wr.innerHTML = '';
-        _pp.monthBands.forEach(function(b) {
-          var cw = Math.round((b.endCol - b.startCol) * ppc);
-          var d = document.createElement('div');
-          d.className = 'pp-ts-cell';
-          d.style.cssText = 'width:'+cw+'px;min-width:'+cw+'px;overflow:hidden;white-space:nowrap;padding:3px 4px;font-size:11px;font-weight:bold;color:white;font-family:Arial,sans-serif;border-right:1px solid #0d47a1;box-sizing:border-box;';
-          d.textContent = b.label;
-          mr.appendChild(d);
+        var pp=document.getElementById('pp-plot-pane');
+        var w=pp?pp.offsetWidth:800;
+        var ppc=_pp.barColCount>0?w/_pp.barColCount:1;
+        var mr=document.getElementById('pp-header-months');
+        var wr=document.getElementById('pp-header-weeks');
+        if(!mr||!wr)return; mr.innerHTML=''; wr.innerHTML='';
+        _pp.monthBands.forEach(function(b){
+          var cw=Math.round((b.endCol-b.startCol)*ppc);
+          var d=document.createElement('div');
+          d.style.cssText='width:'+cw+'px;min-width:'+cw+'px;overflow:hidden;white-space:nowrap;padding:3px 4px;font-size:11px;font-weight:bold;color:white;font-family:Arial,sans-serif;border-right:1px solid #0d47a1;box-sizing:border-box;cursor:grab;';
+          d.textContent=b.label; mr.appendChild(d);
         });
-        for (var i=0; i<_pp.weekTicks.length; i++) {
-          var t = _pp.weekTicks[i];
-          var nc = i+1<_pp.weekTicks.length ? _pp.weekTicks[i+1].col : _pp.barColCount;
-          var cw2 = Math.round((nc - t.col) * ppc);
-          var d2 = document.createElement('div');
-          d2.className = 'pp-ts-cell';
-          d2.style.cssText = 'width:'+cw2+'px;min-width:'+cw2+'px;overflow:hidden;white-space:nowrap;padding:3px 4px;font-size:10px;color:#bbdefb;font-family:Arial,sans-serif;border-right:1px solid #0d47a1;box-sizing:border-box;';
-          d2.textContent = t.label;
-          wr.appendChild(d2);
+        for(var i=0;i<_pp.weekTicks.length;i++){
+          var t=_pp.weekTicks[i];
+          var nc=i+1<_pp.weekTicks.length?_pp.weekTicks[i+1].col:_pp.barColCount;
+          var cw2=Math.round((nc-t.col)*ppc);
+          var d2=document.createElement('div');
+          d2.style.cssText='width:'+cw2+'px;min-width:'+cw2+'px;overflow:hidden;white-space:nowrap;padding:3px 4px;font-size:10px;color:#bbdefb;font-family:Arial,sans-serif;border-right:1px solid #0d47a1;box-sizing:border-box;cursor:col-resize;';
+          d2.textContent=t.label; wr.appendChild(d2);
         }
       }
-
       function _pp_rebuildTimescaleHeader() {
-        var cd = document.getElementById('pp-col-data');
-        var cw = cd ? cd.offsetWidth : 0;
-        var sp = document.getElementById('pp-header-splitter-spacer');
-        if (sp) { sp.style.width=PP_SPLIT_W+'px'; sp.style.minWidth=PP_SPLIT_W+'px'; }
-        var cn = document.getElementById('pp-col-names');
-        if (cn) { cn.style.width=cw+'px'; cn.style.minWidth=cw+'px'; cn.style.maxWidth=cw+'px'; }
-        // Check for zoomed range
-        var pd = document.getElementById('pp-plotly-div');
-        if (pd && pd.layout && pd.layout.xaxis && pd.layout.xaxis.range) {
-          var r = pd.layout.xaxis.range;
-          if (r[0] > 0.5 || r[1] < _pp.barColCount - 0.5) {
-            _pp_rebuildTimescaleFromRange(r);
-            return;
-          }
+        var cd=document.getElementById('pp-col-data'),cw=cd?cd.offsetWidth:0;
+        var sp=document.getElementById('pp-header-splitter-spacer');
+        if(sp){sp.style.width=PP_SPLIT_W+'px';sp.style.minWidth=PP_SPLIT_W+'px';}
+        var cn=document.getElementById('pp-col-names');
+        if(cn){cn.style.width=cw+'px';cn.style.minWidth=cw+'px';cn.style.maxWidth=cw+'px';}
+        var pd=document.getElementById('pp-plotly-div');
+        if(pd&&pd.layout&&pd.layout.xaxis&&pd.layout.xaxis.range){
+          var r=pd.layout.xaxis.range;
+          if(r[0]>0.5||r[1]<_pp.barColCount-0.5){_pp_rebuildTimescaleFromRange(r);return;}
         }
         _pp_buildTimescaleHeader();
       }
-
       function _pp_rebuildTimescaleFromRange(range) {
-        var pp = document.getElementById('pp-plot-pane');
-        var pw = pp ? pp.offsetWidth : 800;
-        var rw = range[1]-range[0];
-        if (rw <= 0) return;
-        var ppc = pw / rw;
-        var mr = document.getElementById('pp-header-months');
-        if (mr) {
-          mr.innerHTML = '';
-          _pp.monthBands.forEach(function(b) {
-            var vs = Math.max(b.startCol, range[0]);
-            var ve = Math.min(b.endCol, range[1]);
-            if (ve<=vs) return;
-            var cw = Math.round((ve-vs)*ppc);
-            var d = document.createElement('div');
-            d.className = 'pp-ts-cell';
-            d.style.cssText = 'width:'+cw+'px;min-width:'+cw+'px;overflow:hidden;white-space:nowrap;padding:3px 4px;font-size:11px;font-weight:bold;color:white;font-family:Arial,sans-serif;border-right:1px solid #0d47a1;box-sizing:border-box;';
-            d.textContent = b.label;
-            mr.appendChild(d);
-          });
-        }
-        var wr = document.getElementById('pp-header-weeks');
-        if (wr) {
-          wr.innerHTML = '';
-          for (var i=0; i<_pp.weekTicks.length; i++) {
-            var t = _pp.weekTicks[i];
-            var nc = i+1<_pp.weekTicks.length ? _pp.weekTicks[i+1].col : _pp.barColCount;
-            var vs = Math.max(t.col, range[0]);
-            var ve = Math.min(nc, range[1]);
-            if (ve<=vs) continue;
-            var cw2 = Math.round((ve-vs)*ppc);
-            var d2 = document.createElement('div');
-            d2.className = 'pp-ts-cell';
-            d2.style.cssText = 'width:'+cw2+'px;min-width:'+cw2+'px;overflow:hidden;white-space:nowrap;padding:3px 4px;font-size:10px;color:#bbdefb;font-family:Arial,sans-serif;border-right:1px solid #0d47a1;box-sizing:border-box;';
-            d2.textContent = t.label;
-            wr.appendChild(d2);
-          }
-        }
+        var pp=document.getElementById('pp-plot-pane'),pw=pp?pp.offsetWidth:800;
+        var rw=range[1]-range[0]; if(rw<=0)return;
+        var ppc=pw/rw;
+        var mr=document.getElementById('pp-header-months');
+        if(mr){mr.innerHTML='';_pp.monthBands.forEach(function(b){
+          var vs=Math.max(b.startCol,range[0]),ve=Math.min(b.endCol,range[1]);
+          if(ve<=vs)return;var cw=Math.round((ve-vs)*ppc);
+          var d=document.createElement('div');
+          d.style.cssText='width:'+cw+'px;min-width:'+cw+'px;overflow:hidden;white-space:nowrap;padding:3px 4px;font-size:11px;font-weight:bold;color:white;font-family:Arial,sans-serif;border-right:1px solid #0d47a1;box-sizing:border-box;cursor:grab;';
+          d.textContent=b.label;mr.appendChild(d);
+        });}
+        var wr=document.getElementById('pp-header-weeks');
+        if(wr){wr.innerHTML='';for(var i=0;i<_pp.weekTicks.length;i++){
+          var t=_pp.weekTicks[i],nc=i+1<_pp.weekTicks.length?_pp.weekTicks[i+1].col:_pp.barColCount;
+          var vs=Math.max(t.col,range[0]),ve=Math.min(nc,range[1]);if(ve<=vs)continue;
+          var cw2=Math.round((ve-vs)*ppc);
+          var d2=document.createElement('div');
+          d2.style.cssText='width:'+cw2+'px;min-width:'+cw2+'px;overflow:hidden;white-space:nowrap;padding:3px 4px;font-size:10px;color:#bbdefb;font-family:Arial,sans-serif;border-right:1px solid #0d47a1;box-sizing:border-box;cursor:col-resize;';
+          d2.textContent=t.label;wr.appendChild(d2);
+        }}
       }
 
       // =========================================================================
-      //  PLOTLY RENDER
+      //  PLOTLY
       // =========================================================================
       function _pp_renderPlotly() {
-        var div = document.getElementById('pp-plotly-div');
-        if (!div) { setTimeout(_pp_renderPlotly, 200); return; }
-        Plotly.newPlot(div, _pp.traces, _pp.layout, { responsive:false, displayModeBar:false });
-        div.on('plotly_click', function(data) {
-          try {
-            if (!data || !data.points || !data.points.length) return;
-            var pt = data.points[0];
-            var taskId = String(pt.customdata || pt.text || '').trim();
-            if (!taskId || taskId==='undefined' || taskId==='null' || taskId==='') return;
-            var rowIdx = -1;
-            for (var i=0; i<_pp.rowMeta.length; i++) {
-              if (String(_pp.rowMeta[i].taskId) === taskId) { rowIdx=i; break; }
-            }
-            if (rowIdx >= 0) _pp_selectRow(rowIdx, taskId);
-            else if (_pp.form) anvil.call(_pp.form, '_on_gantt_click', {text:taskId});
-          } catch(e) { console.warn('[plotly_click]', e); }
+        var div=document.getElementById('pp-plotly-div');
+        if(!div){setTimeout(_pp_renderPlotly,200);return;}
+        Plotly.newPlot(div,_pp.traces,_pp.layout,{responsive:false,displayModeBar:false});
+        div.on('plotly_click',function(data){
+          try{
+            if(!data||!data.points||!data.points.length)return;
+            var pt=data.points[0];
+            var tid=String(pt.customdata||pt.text||'').trim();
+            if(!tid||tid==='undefined'||tid==='null'||tid==='')return;
+            var ri=-1;
+            for(var i=0;i<_pp.rowMeta.length;i++){if(String(_pp.rowMeta[i].taskId)===tid){ri=i;break;}}
+            if(ri>=0)_pp_selectRow(ri,tid);
+          }catch(e){console.warn('[plotly_click]',e);}
         });
       }
 
       // =========================================================================
       //  COLLAPSE
       // =========================================================================
-      function _pp_isRowVisible(idx) {
-        var m = _pp.rowMeta[idx]; if (!m) return true;
-        var pid = m.parentWbsId;
-        while (pid) {
-          if (_pp.collapseState[pid] === false) return false;
-          var owner = null;
-          for (var i=0; i<_pp.rowMeta.length; i++) {
-            if (_pp.rowMeta[i].wbsId===pid && _pp.rowMeta[i].rowType==='WBS') { owner=_pp.rowMeta[i]; break; }
-          }
-          pid = owner ? owner.parentWbsId : null;
-        }
-        return true;
-      }
+      function _pp_isRowVisible(idx){var m=_pp.rowMeta[idx];if(!m)return true;var pid=m.parentWbsId;while(pid){if(_pp.collapseState[pid]===false)return false;var ow=null;for(var i=0;i<_pp.rowMeta.length;i++){if(_pp.rowMeta[i].wbsId===pid&&_pp.rowMeta[i].rowType==='WBS'){ow=_pp.rowMeta[i];break;}}pid=ow?ow.parentWbsId:null;}return true;}
+      function _pp_applyCollapseState(anim){var tb=document.getElementById('pp-col-table');if(!tb)return;tb.querySelectorAll('tr[data-row-idx]').forEach(function(tr){var idx=parseInt(tr.getAttribute('data-row-idx'));var m=_pp.rowMeta[idx];if(!m)return;var vis=_pp_isRowVisible(idx),cur=tr.style.display!=='none';if(anim&&!vis&&cur){tr.style.transition='opacity '+PP_COLLAPSE_MS+'ms';tr.style.opacity='0';setTimeout(function(){tr.style.display='none';tr.style.opacity='';tr.style.transition='';},PP_COLLAPSE_MS);}else if(anim&&vis&&!cur){tr.style.display='';tr.style.opacity='0';tr.style.transition='opacity '+PP_COLLAPSE_MS+'ms';setTimeout(function(){tr.style.opacity='1';setTimeout(function(){tr.style.opacity='';tr.style.transition='';},PP_COLLAPSE_MS);},10);}else{tr.style.display=vis?'':'none';}if(m.rowType==='WBS'&&m.wbsId){var ic=tr.querySelector('.pp-wbs-icon');if(ic)ic.textContent=(_pp.collapseState[m.wbsId]!==false)?'\u25BC':'\u25B6';}});setTimeout(_pp_syncPlotlyToCollapse,anim?PP_COLLAPSE_MS+50:0);}
+      function _pp_syncPlotlyToCollapse(){var nY={},yP=0;for(var i=0;i<_pp.rowMeta.length;i++){if(_pp_isRowVisible(i))nY[i]=yP++;}var vc=yP;var nt=JSON.parse(JSON.stringify(_pp.traces));nt.forEach(function(tr){if(!tr.y)return;var nx=[],ny=[],ntx=[],nc=[];for(var j=0;j<tr.y.length;j++){var y=tr.y[j];if(y===null||y===undefined){nx.push(null);ny.push(null);ntx.push(tr.text?(tr.text[j]||''):'');nc.push(tr.customdata?(tr.customdata[j]||''):'');}else{var ri=Math.round(y);if(nY.hasOwnProperty(ri)){nx.push(tr.x[j]);ny.push(nY[ri]);ntx.push(tr.text?(tr.text[j]||''):'');nc.push(tr.customdata?(tr.customdata[j]||''):'');}}}tr.x=nx;tr.y=ny;if(tr.text)tr.text=ntx;if(tr.customdata)tr.customdata=nc;});var nl=JSON.parse(JSON.stringify(_pp.layout));if(nl.shapes){nl.shapes=nl.shapes.filter(function(s){return nY.hasOwnProperty(Math.round((s.y0+s.y1)/2));}).map(function(s){var n2=nY[Math.round((s.y0+s.y1)/2)];return Object.assign({},s,{y0:n2-0.5,y1:n2+0.5});});}var nh=Math.max(_pp.rowH,vc*_pp.rowH);nl.height=nh;nl.yaxis.range=[vc,-1];var pd=document.getElementById('pp-plotly-div');if(pd)pd.style.height=nh+'px';Plotly.react(pd,nt,nl,{responsive:false,displayModeBar:false});}
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 window._pp_toggleWbs=function(wbsId){var cur=(_pp.collapseState[wbsId]!==false);_pp.collapseState[wbsId]=!cur;_pp_applyCollapseState(PP_COLLAPSE_MS>0);if(_pp.form){try{anvil.call(_pp.form,'_on_collapse_change',wbsId,!cur);}catch(e){}}};
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 window._pp_expandAll=function(){_pp.rowMeta.forEach(function(m){if(m.wbsId)_pp.collapseState[m.wbsId]=true;});_pp_applyCollapseState(false);};
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 window._pp_collapseAll=function(){_pp.rowMeta.forEach(function(m){if(m.wbsId&&m.depth===1)_pp.collapseState[m.wbsId]=false;});_pp_applyCollapseState(false);};
 
-      function _pp_applyCollapseState(animate) {
-        var table = document.getElementById('pp-col-table'); if (!table) return;
-        table.querySelectorAll('tr[data-row-idx]').forEach(function(tr) {
-          var idx=parseInt(tr.getAttribute('data-row-idx'));
-          var m=_pp.rowMeta[idx]; if(!m) return;
-          var vis=_pp_isRowVisible(idx), cur=tr.style.display!=='none';
-          if (animate&&!vis&&cur) {
-            tr.style.transition='opacity '+PP_COLLAPSE_MS+'ms'; tr.style.opacity='0';
-            setTimeout(function(){tr.style.display='none';tr.style.opacity='';tr.style.transition='';},PP_COLLAPSE_MS);
-          } else if (animate&&vis&&!cur) {
-            tr.style.display='';tr.style.opacity='0';tr.style.transition='opacity '+PP_COLLAPSE_MS+'ms';
-            setTimeout(function(){tr.style.opacity='1';setTimeout(function(){tr.style.opacity='';tr.style.transition='';},PP_COLLAPSE_MS);},10);
-          } else { tr.style.display=vis?'':'none'; }
-          if (m.rowType==='WBS'&&m.wbsId) {
-            var icon=tr.querySelector('.pp-wbs-icon');
-            if(icon) icon.textContent=(_pp.collapseState[m.wbsId]!==false)?'\u25BC':'\u25B6';
-          }
-        });
-        setTimeout(_pp_syncPlotlyToCollapse, animate?PP_COLLAPSE_MS+50:0);
-      }
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 // =========================================================================
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 //  SIDEBAR / DETAILS TOGGLES (from Python)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 // =========================================================================
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 window._pp_toggleSidebar=function(v){_pp.sidebarVisible=v;var b=document.getElementById('pp-btn-sidebar');if(b)b.textContent=v?'\u2715':'\u2630';_pp_applyLayout();_pp_rebuildTimescaleHeader();};
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 window._pp_toggleDetails=function(v){_pp.detailsVisible=v;var b=document.getElementById('pp-btn-details');if(b)b.textContent=v?'Hide Details':'Show Details';_pp_applyLayout();};
 
-      function _pp_syncPlotlyToCollapse() {
-        var newY={},yPos=0;
-        for(var i=0;i<_pp.rowMeta.length;i++){if(_pp_isRowVisible(i))newY[i]=yPos++;}
-        var vc=yPos;
-        var nt=JSON.parse(JSON.stringify(_pp.traces));
-        nt.forEach(function(tr){
-          if(!tr.y)return;
-          var nx=[],ny=[],ntx=[],nc=[];
-          for(var j=0;j<tr.y.length;j++){
-            var y=tr.y[j];
-            if(y===null||y===undefined){nx.push(null);ny.push(null);ntx.push(tr.text?(tr.text[j]||''):'');nc.push(tr.customdata?(tr.customdata[j]||''):'');}
-            else{var ri=Math.round(y);if(newY.hasOwnProperty(ri)){nx.push(tr.x[j]);ny.push(newY[ri]);ntx.push(tr.text?(tr.text[j]||''):'');nc.push(tr.customdata?(tr.customdata[j]||''):'');}}
-          }
-          tr.x=nx;tr.y=ny;if(tr.text)tr.text=ntx;if(tr.customdata)tr.customdata=nc;
-        });
-        var nl=JSON.parse(JSON.stringify(_pp.layout));
-        if(nl.shapes){nl.shapes=nl.shapes.filter(function(s){return newY.hasOwnProperty(Math.round((s.y0+s.y1)/2));}).map(function(s){var n2=newY[Math.round((s.y0+s.y1)/2)];return Object.assign({},s,{y0:n2-0.5,y1:n2+0.5});});}
-        var nh=Math.max(_pp.rowH,vc*_pp.rowH);nl.height=nh;nl.yaxis.range=[vc,-1];
-        var pd=document.getElementById('pp-plotly-div');
-        if(pd)pd.style.height=nh+'px';
-        Plotly.react(pd,nt,nl,{responsive:false,displayModeBar:false});
-      }
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 // =========================================================================
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 //  KEYBOARD
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 // =========================================================================
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 function _pp_setupKeyboard(){document.addEventListener('keydown',function(e){if(!e.ctrlKey)return;if(e.key==='='||e.key==='+'){e.preventDefault();_pp_expandAll();}if(e.key==='-'){e.preventDefault();_pp_collapseAll();}});}
 
-      window._pp_toggleWbs = function(wbsId) {
-        var cur=(_pp.collapseState[wbsId]!==false);_pp.collapseState[wbsId]=!cur;
-        _pp_applyCollapseState(PP_COLLAPSE_MS>0);
-        if(_pp.form){try{anvil.call(_pp.form,'_on_collapse_change',wbsId,!cur);}catch(e){}}
-      };
-      window._pp_expandAll = function() {
-        _pp.rowMeta.forEach(function(m){if(m.wbsId)_pp.collapseState[m.wbsId]=true;});
-        _pp_applyCollapseState(false);
-        if(_pp.form){try{anvil.call(_pp.form,'_on_collapse_all',true);}catch(e){}}
-      };
-      window._pp_collapseAll = function() {
-        _pp.rowMeta.forEach(function(m){if(m.wbsId&&m.depth===1)_pp.collapseState[m.wbsId]=false;});
-        _pp_applyCollapseState(false);
-        if(_pp.form){try{anvil.call(_pp.form,'_on_collapse_all',false);}catch(e){}}
-      };
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 // =========================================================================
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 //  SPLITTER
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 // =========================================================================
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 function _pp_setupSplitter(){var sp=document.getElementById('pp-splitter'),cd=document.getElementById('pp-col-data');if(!sp||!cd)return;var dr=false,sx=0,sw=0;sp.addEventListener('mousedown',function(e){dr=true;sx=e.clientX;sw=cd.offsetWidth;document.body.style.cursor='col-resize';document.body.style.userSelect='none';e.preventDefault();});document.addEventListener('mousemove',function(e){if(!dr)return;var nw=Math.max(PP_COL_MIN_W,sw+(e.clientX-sx));cd.style.width=nw+'px';cd.style.minWidth=nw+'px';cd.style.maxWidth=nw+'px';var cn=document.getElementById('pp-col-names');if(cn){cn.style.width=nw+'px';cn.style.minWidth=nw+'px';cn.style.maxWidth=nw+'px';}});document.addEventListener('mouseup',function(){if(!dr)return;dr=false;document.body.style.cursor='';document.body.style.userSelect='';var pd=document.getElementById('pp-plotly-div'),pp=document.getElementById('pp-plot-pane');if(pd&&pp)Plotly.relayout(pd,{width:pp.offsetWidth});_pp_rebuildTimescaleHeader();});}
 
-      // =========================================================================
-      //  KEYBOARD
-      // =========================================================================
-      function _pp_setupKeyboard() {
-        document.addEventListener('keydown', function(e) {
-          if(!e.ctrlKey)return;
-          if(e.key==='='||e.key==='+'){e.preventDefault();_pp_expandAll();}
-          if(e.key==='-'){e.preventDefault();_pp_collapseAll();}
-        });
-      }
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 // =========================================================================
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 //  SCROLL SYNC
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 // =========================================================================
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 function _pp_setupScrollSync(){var cp=document.getElementById('pp-col-data'),pp=document.getElementById('pp-plot-pane'),hr=document.getElementById('pp-header-right');if(!cp||!pp)return;var s=false;cp.addEventListener('scroll',function(){if(s)return;s=true;pp.scrollTop=cp.scrollTop;s=false;});pp.addEventListener('scroll',function(){if(s)return;s=true;cp.scrollTop=pp.scrollTop;if(hr)hr.scrollLeft=pp.scrollLeft;s=false;});}
 
-      // =========================================================================
-      //  SPLITTER
-      // =========================================================================
-      function _pp_setupSplitter() {
-        var sp=document.getElementById('pp-splitter'),cd=document.getElementById('pp-col-data');
-        if(!sp||!cd)return;
-        var dragging=false,sx=0,sw=0;
-        sp.addEventListener('mousedown',function(e){dragging=true;sx=e.clientX;sw=cd.offsetWidth;document.body.style.cursor='col-resize';document.body.style.userSelect='none';e.preventDefault();});
-        document.addEventListener('mousemove',function(e){
-          if(!dragging)return;
-          var nw=Math.max(PP_COL_MIN_W,sw+(e.clientX-sx));
-          cd.style.width=nw+'px';cd.style.minWidth=nw+'px';cd.style.maxWidth=nw+'px';
-          var cn=document.getElementById('pp-col-names');
-          if(cn){cn.style.width=nw+'px';cn.style.minWidth=nw+'px';cn.style.maxWidth=nw+'px';}
-        });
-        document.addEventListener('mouseup',function(){
-          if(!dragging)return;dragging=false;
-          document.body.style.cursor='';document.body.style.userSelect='';
-          var pd=document.getElementById('pp-plotly-div'),pp=document.getElementById('pp-plot-pane');
-          if(pd&&pp)Plotly.relayout(pd,{width:pp.offsetWidth});
-          _pp_rebuildTimescaleHeader();
-        });
-      }
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 // =========================================================================
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 //  TIMESCALE ZOOM/PAN
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 //  Month row (upper) drag = PAN
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 //  Week row (lower) drag  = ZOOM (left edge anchored, right edge changes)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 // =========================================================================
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 function _pp_setupTimescaleDrag() {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 var mr = document.getElementById('pp-header-months');
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 var wr = document.getElementById('pp-header-weeks');
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 if (!mr && !wr) return;
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 var st = { active:false, mode:'pan', startX:0, startRange:[0,0] };
 
-      // =========================================================================
-      //  SCROLL SYNC
-      // =========================================================================
-      function _pp_setupScrollSync() {
-        var cp=document.getElementById('pp-col-data'),pp=document.getElementById('pp-plot-pane'),hr=document.getElementById('pp-header-right');
-        if(!cp||!pp)return;
-        var sync=false;
-        cp.addEventListener('scroll',function(){if(sync)return;sync=true;pp.scrollTop=cp.scrollTop;sync=false;});
-        pp.addEventListener('scroll',function(){if(sync)return;sync=true;cp.scrollTop=pp.scrollTop;if(hr)hr.scrollLeft=pp.scrollLeft;sync=false;});
-      }
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 function curRange() {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 var pd=document.getElementById('pp-plotly-div');
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 if(pd&&pd.layout&&pd.layout.xaxis&&pd.layout.xaxis.range){var r=pd.layout.xaxis.range;return[r[0],r[1]];}
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 return [0,_pp.barColCount];
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                }
 
-      // =========================================================================
-      //  TIMESCALE ZOOM / PAN
-      //
-      //  Pan:  drag in open space → shift visible range left/right
-      //  Zoom: drag near divider → ANCHOR LEFT EDGE, change right edge
-      //        drag right = zoom out (show more), drag left = zoom in (show less)
-      // =========================================================================
-      function _pp_setupTimescaleDrag() {
-        var hr = document.getElementById('pp-header-right');
-        if (!hr) return;
-        var mr = document.getElementById('pp-header-months');
-        var wr = document.getElementById('pp-header-weeks');
-        var st = { active:false, mode:'pan', startX:0, startRange:[0,0] };
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 function onDown(e, mode) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 if(e.button!==0)return; e.preventDefault();
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 st.active=true; st.startX=e.clientX; st.startRange=curRange(); st.mode=mode;
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 document.body.style.userSelect='none';
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                }
 
-        function nearDivider(e) {
-          var rows = [mr, wr];
-          for (var r=0; r<rows.length; r++) {
-            var row=rows[r]; if(!row) continue;
-            var cells=row.children, off=row.getBoundingClientRect().left;
-            for (var i=0; i<cells.length; i++) {
-              off += cells[i].offsetWidth;
-              if (Math.abs(e.clientX-off) <= PP_TS_SNAP_PX) return true;
-            }
-          }
-          return false;
-        }
-        function curRange() {
-          var pd=document.getElementById('pp-plotly-div');
-          if(pd&&pd.layout&&pd.layout.xaxis&&pd.layout.xaxis.range){var r=pd.layout.xaxis.range;return[r[0],r[1]];}
-          return [0, _pp.barColCount];
-        }
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 // Attach to month row = pan
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 if (mr) mr.addEventListener('mousedown', function(e) { onDown(e, 'pan'); });
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 // Attach to week row = zoom
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 if (wr) wr.addEventListener('mousedown', function(e) { onDown(e, 'zoom'); });
 
-        hr.addEventListener('mousemove', function(e) {
-          if(st.active)return;
-          hr.style.cursor = nearDivider(e) ? 'col-resize' : 'grab';
-        });
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 document.addEventListener('mousemove', function(e) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 if(!st.active)return;
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 var pp=document.getElementById('pp-plot-pane'), pw=pp?pp.offsetWidth:800;
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 var rw=st.startRange[1]-st.startRange[0], dx=e.clientX-st.startX;
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 var cd=(dx/pw)*rw;
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 var nr;
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 if (st.mode==='pan') {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 nr=[st.startRange[0]-cd, st.startRange[1]-cd];
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 if(nr[0]<0){nr[1]-=nr[0];nr[0]=0;}
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 if(nr[1]>_pp.barColCount){nr[0]-=(nr[1]-_pp.barColCount);nr[1]=_pp.barColCount;}
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                } else {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 // Zoom: anchor left, change right. Drag right=zoom out, drag left=zoom in
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 nr=[st.startRange[0], st.startRange[1]+cd];
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 if(nr[1]-nr[0]<7)nr[1]=nr[0]+7;
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 if(nr[1]>_pp.barColCount)nr[1]=_pp.barColCount;
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                }
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 var pd=document.getElementById('pp-plotly-div');
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 if(pd)Plotly.relayout(pd,{'xaxis.range':nr});
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 _pp_rebuildTimescaleFromRange(nr);
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                });
 
-        hr.addEventListener('mousedown', function(e) {
-          if(e.button!==0)return; e.preventDefault();
-          st.active=true; st.startX=e.clientX; st.startRange=curRange();
-          st.mode = nearDivider(e) ? 'zoom' : 'pan';
-          hr.style.cursor = st.mode==='zoom' ? 'col-resize' : 'grabbing';
-          document.body.style.userSelect='none';
-        });
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 document.addEventListener('mouseup', function() {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 if(!st.active)return; st.active=false; document.body.style.userSelect='';
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                });
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                }
 
-        document.addEventListener('mousemove', function(e) {
-          if(!st.active)return;
-          var pp=document.getElementById('pp-plot-pane');
-          var pw=pp?pp.offsetWidth:800;
-          var rw=st.startRange[1]-st.startRange[0];
-          var dx=e.clientX-st.startX;
-          var cd=(dx/pw)*rw;
-          var nr;
-
-          if (st.mode==='pan') {
-            nr = [st.startRange[0]-cd, st.startRange[1]-cd];
-            // Clamp
-            if(nr[0]<0){nr[1]-=nr[0];nr[0]=0;}
-            if(nr[1]>_pp.barColCount){nr[0]-=(nr[1]-_pp.barColCount);nr[1]=_pp.barColCount;}
-                                     } else {
-                                      // Zoom: anchor left edge, change right edge only
-                                      // drag right = zoom out (bigger range), drag left = zoom in (smaller range)
-                                      nr = [st.startRange[0], st.startRange[1]+cd];
-                                      if(nr[1]-nr[0]<7) nr[1]=nr[0]+7;   // min 1 week
-                                      if(nr[1]>_pp.barColCount) nr[1]=_pp.barColCount;
-                                     }
-
-                                      var pd=document.getElementById('pp-plotly-div');
-                                      if(pd) Plotly.relayout(pd, {'xaxis.range':nr});
-                                      _pp_rebuildTimescaleFromRange(nr);
-                                     });
-
-                                      document.addEventListener('mouseup', function() {
-                                      if(!st.active)return;
-                                      st.active=false; hr.style.cursor='grab'; document.body.style.userSelect='';
-                                     });
-                                     }
-
-                                      </script>
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 </script>
 package_name: PrestoPlan
 renamed: true
 runtime_options:
