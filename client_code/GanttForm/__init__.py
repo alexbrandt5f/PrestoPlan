@@ -4,9 +4,8 @@ import anvil.server
 import anvil.js
 from anvil.js.window import document
 import json
-import time as _time
 from datetime import date as _date, datetime as _datetime
-from .. import client_globals
+import client_globals
 
 
 # ===========================================================================
@@ -25,16 +24,38 @@ class _SafeEncoder(json.JSONEncoder):
 
 # ===========================================================================
 #  CLIENT-SIDE LOGGING — set to False for production
+#  Uses JS console.log for output (visible in browser F12 Console tab)
+#  Uses JS performance.now() for timing (Anvil client has no time module)
 # ===========================================================================
 
 PP_LOG_ENABLED = True
 
 
 def _log(tag, msg):
-  """Print a timestamped log line to the Anvil client console."""
-  if PP_LOG_ENABLED:
-    ts = _datetime.now().strftime("%H:%M:%S.%f")[:-3]
-    print(f"[PP-Client {ts}] {tag} | {msg}")
+  """Print a log line to the browser developer console (F12 > Console)."""
+  if not PP_LOG_ENABLED:
+    return
+  try:
+    anvil.js.window.console.log(f"[PP] {tag} | {msg}")
+  except Exception:
+    pass
+
+
+def _now_ms():
+  """Return current time in milliseconds (browser performance timer)."""
+  try:
+    return float(anvil.js.window.performance.now())
+  except Exception:
+    return 0.0
+
+
+def _log_elapsed(tag, label, start_ms):
+  """Log elapsed time since start_ms. Returns current ms for chaining."""
+  if not PP_LOG_ENABLED:
+    return _now_ms()
+  elapsed = (_now_ms() - start_ms) / 1000.0
+  _log(tag, f"{label}: {elapsed:.2f}s")
+  return _now_ms()
 
 
 # ===========================================================================
@@ -171,7 +192,7 @@ class GanttForm(GanttFormTemplate):
 
     _log("load_gantt", f"START project={self._current_project_id} "
          f"import={self._current_import_id}")
-    t0 = _time.time()
+    t0 = _now_ms()
     self.lbl_no_data.text    = 'Loading Gantt chart...'
     self.lbl_no_data.visible = True
     self.pnl_gantt_container.clear()
@@ -179,21 +200,21 @@ class GanttForm(GanttFormTemplate):
     try:
       token  = client_globals.session_token
       _log("load_gantt", "Calling get_gantt_data...")
-      t1 = _time.time()
+      t1 = _now_ms()
       result = anvil.server.call(
         'get_gantt_data', token,
         self._current_project_id, self._current_import_id
       )
-      elapsed_call = _time.time() - t1
+      elapsed_call = (_now_ms() - t1) / 1000.0
       _log("load_gantt", f"Server call returned in {elapsed_call:.2f}s")
 
       # --- Handle BlobMedia for large payloads ---
       if isinstance(result, anvil.BlobMedia):
         _log("load_gantt", "Result is BlobMedia, decoding...")
-        t1 = _time.time()
+        t1 = _now_ms()
         gantt_data = json.loads(result.get_bytes().decode('utf-8'))
         _log("load_gantt", f"BlobMedia decoded in "
-             f"{_time.time()-t1:.2f}s")
+             f"{(_now_ms()-t1)/1000.0:.2f}s")
       else:
         gantt_data = result
         _log("load_gantt", "Result is dict (under 500KB)")
@@ -213,10 +234,10 @@ class GanttForm(GanttFormTemplate):
       self.lbl_no_data.visible = False
 
       _log("load_gantt", "Calling _render_gantt...")
-      t1 = _time.time()
+      t1 = _now_ms()
       self._render_gantt(gantt_data)
-      _log("load_gantt", f"Render completed in {_time.time()-t1:.2f}s")
-      _log("load_gantt", f"TOTAL load time: {_time.time()-t0:.2f}s")
+      _log("load_gantt", f"Render completed in {(_now_ms()-t1)/1000.0:.2f}s")
+      _log("load_gantt", f"TOTAL load time: {(_now_ms()-t0)/1000.0:.2f}s")
 
     except Exception as e:
       _log("load_gantt", f"EXCEPTION: {e}")
@@ -229,7 +250,7 @@ class GanttForm(GanttFormTemplate):
 
   def _render_gantt(self, gantt_data):
     """Build full app HTML and inject into pnl_gantt_container."""
-    t0 = _time.time()
+    t0 = _now_ms()
     raw_tasks     = gantt_data.get('tasks', [])
     columns       = gantt_data.get('columns', [])
     bar_col_count = gantt_data.get('bar_col_count', 0)
@@ -405,7 +426,7 @@ class GanttForm(GanttFormTemplate):
 
     # --- JS data payload ---
     _log("render", "Serialising JS data payload...")
-    t_json = _time.time()
+    t_json = _now_ms()
     js_data = json.dumps({
       'traces':        traces,
       'layout':        layout,
@@ -424,7 +445,7 @@ class GanttForm(GanttFormTemplate):
       'currentImportId': self._current_import_id,
     }, cls=_SafeEncoder)
     _log("render", f"JSON payload: {len(js_data)/1024:.1f} KB "
-         f"in {_time.time()-t_json:.2f}s")
+         f"in {(_now_ms()-t_json)/1000.0:.2f}s")
 
     # --- Shell HTML ---
     html = f"""
@@ -498,7 +519,7 @@ class GanttForm(GanttFormTemplate):
     anvil.js.window._prestoplan_form = self
     _log("render", "Injecting HTML into pnl_gantt_container...")
     self.pnl_gantt_container.add_component(HtmlTemplate(html=html))
-    _log("render", f"Render complete. Total: {_time.time()-t0:.2f}s")
+    _log("render", f"Render complete. Total: {(_now_ms()-t0)/1000.0:.2f}s")
 
   # --------------------------------------------------------------------------
   #  HTML BUILDERS
