@@ -8,11 +8,10 @@ from .. import client_globals
 
 
 # ===========================================================================
-#  CONSTANTS  (must match PP_* in Native Libraries JS)
+#  CONSTANTS  (must match values in Native Libraries JS)
 # ===========================================================================
 
 ROW_HEIGHT    = 24    # px per Gantt row
-TOOLBAR_H     = 0     # toolbar is now in the nav bar (no separate strip)
 COL_HEADER_H  = 48    # px for timescale header (month row + week row)
 DETAILS_H     = 220   # px for details pane
 NAV_H         = 56    # px for Anvil nav bar
@@ -47,22 +46,17 @@ class GanttForm(GanttFormTemplate):
   """
   Main Gantt viewer form for PrestoPlan.
 
-  All UI (sidebar, gantt, details) is rendered as HTML inside pp-shell
-  which is position:fixed below the Anvil nav bar.
+  Nav bar items (hamburger, project name, Change Project, Hide Details)
+  are added as Anvil components to the nav bar in __init__.
 
-  Toolbar items (hamburger, project name, Change Project, Hide Details)
-  are injected into the Anvil nav bar by JavaScript _pp_injectNavBarItems().
-
-  pp-shell layout (no toolbar row):
-    #pp-main-row   (fills remaining height minus details)
+  pp-shell layout:
+    #pp-main-row
       #pp-sidebar  (collapsible, 220px)
       #pp-gantt-area
-        #pp-col-header   (48px: month row + week row)
+        #pp-col-header   (48px)
         #pp-scroll-body
-          #pp-col-data   (column table with sticky header)
-          #pp-splitter   (6px drag handle)
-          #pp-plot-pane  (Plotly)
-    #pp-details    (220px: tab strip + content)
+          #pp-col-data | #pp-splitter | #pp-plot-pane
+    #pp-details    (220px)
   """
 
   def __init__(self, **properties):
@@ -73,7 +67,6 @@ class GanttForm(GanttFormTemplate):
     # ---- State ----
     self._details_visible    = True
     self._sidebar_visible    = False
-    self._gfs_visible        = False
     self._current_project_id = None
     self._current_import_id  = None
     self._current_layout_id  = 'default'
@@ -94,7 +87,66 @@ class GanttForm(GanttFormTemplate):
     if user:
       self.lbl_nav_user.text = user.get('display_name', '')
 
+    # ---- Add toolbar items to the nav bar (left side) ----
+    self._setup_nav_bar()
+
     self._open_project_selector()
+
+  # ==========================================================================
+  #  NAV BAR SETUP  — Anvil components added programmatically
+  # ==========================================================================
+
+  def _setup_nav_bar(self):
+    """Add hamburger, project label, and buttons to the nav bar left side."""
+    # Hamburger button (toggle sidebar)
+    self._btn_hamburger = Link(text='☰', font_size=18)
+    self._btn_hamburger.set_event_handler('click', self._hamburger_click)
+    self.add_component(self._btn_hamburger, slot='left-nav')
+
+    # Project name label
+    self._lbl_project = Label(text='', bold=True, font_size=13)
+    self.add_component(self._lbl_project, slot='left-nav')
+
+    # Import label
+    self._lbl_import = Label(text='', font_size=11, foreground='#bbdefb')
+    self.add_component(self._lbl_import, slot='left-nav')
+
+    # Change Project button
+    self._btn_change = Link(text='Change Project', font_size=12)
+    self._btn_change.set_event_handler('click', self._change_project_click)
+    self.add_component(self._btn_change, slot='left-nav')
+
+    # Hide/Show Details button
+    self._btn_details = Link(text='Hide Details', font_size=12)
+    self._btn_details.set_event_handler('click', self._details_click)
+    self.add_component(self._btn_details, slot='left-nav')
+
+  def _hamburger_click(self, **event_args):
+    """Toggle sidebar visibility."""
+    self._sidebar_visible = not self._sidebar_visible
+    self._btn_hamburger.text = '✕' if self._sidebar_visible else '☰'
+    try:
+      anvil.js.call_js('_pp_toggleSidebar', self._sidebar_visible)
+    except Exception:
+      pass
+
+  def _change_project_click(self, **event_args):
+    """Open project selector."""
+    self._open_project_selector()
+
+  def _details_click(self, **event_args):
+    """Toggle details pane visibility."""
+    self._details_visible = not self._details_visible
+    self._btn_details.text = 'Hide Details' if self._details_visible else 'Show Details'
+    try:
+      anvil.js.call_js('_pp_toggleDetails', self._details_visible)
+    except Exception:
+      pass
+
+  def _update_nav_labels(self):
+    """Update the project/import labels in the nav bar."""
+    self._lbl_project.text = self._project_name or ''
+    self._lbl_import.text  = self._import_label or ''
 
   # ==========================================================================
   #  PROJECT SELECTOR
@@ -172,13 +224,14 @@ class GanttForm(GanttFormTemplate):
          if val == dd_imp.selected_value),
         'Unknown Import'
       )
+      self._update_nav_labels()
       self._load_gantt()
 
     except Exception as e:
       alert(f'Error loading projects: {str(e)}')
 
   # ==========================================================================
-  #  GANTT - LOAD
+  #  GANTT - LOAD  (uses BlobMedia for large payloads)
   # ==========================================================================
 
   def _load_gantt(self):
@@ -191,12 +244,18 @@ class GanttForm(GanttFormTemplate):
     self.pnl_gantt_container.clear()
 
     try:
-      token      = client_globals.session_token
-      gantt_data = anvil.server.call(
+      token = client_globals.session_token
+      result = anvil.server.call(
         'get_gantt_data', token,
         self._current_project_id,
         self._current_import_id
       )
+
+      # Handle BlobMedia response (large schedules)
+      if isinstance(result, anvil.BlobMedia):
+        gantt_data = json.loads(result.get_bytes().decode('utf-8'))
+      else:
+        gantt_data = result
 
       if not gantt_data or not gantt_data.get('tasks'):
         self.lbl_no_data.text = 'No tasks found for this import.'
@@ -216,12 +275,7 @@ class GanttForm(GanttFormTemplate):
   # ==========================================================================
 
   def _render_gantt(self, gantt_data):
-    """
-    Build and inject the full app HTML into pnl_gantt_container.
-
-    Toolbar items are NOT rendered here — they're injected into the
-    Anvil nav bar by JS _pp_injectNavBarItems() during _pp_init().
-    """
+    """Build and inject the full app HTML into pnl_gantt_container."""
     raw_tasks     = gantt_data.get('tasks', [])
     columns       = gantt_data.get('columns', [])
     bar_col_count = gantt_data.get('bar_col_count', 0)
@@ -250,7 +304,6 @@ class GanttForm(GanttFormTemplate):
     self._row_meta = row_meta
     col_widths     = [col.get('width', 10) * 7 for col in columns]
 
-    # Build sub-components
     col_names_html = self._build_col_names_html(columns, col_widths)
     col_table_html = self._build_col_table_html(
       tasks, columns, col_widths, collapse_state
@@ -263,7 +316,7 @@ class GanttForm(GanttFormTemplate):
       ts_start, bar_col_count, cols_per_week
     )
 
-    # -- Sidebar HTML --
+    # Sidebar HTML
     sidebar_html = """
 <div style="padding:8px; font-family:Arial,sans-serif; font-size:12px;">
   <div style="font-weight:bold; margin-bottom:4px;">Layout:</div>
@@ -279,8 +332,7 @@ class GanttForm(GanttFormTemplate):
     style="width:100%; text-align:left; background:#e8eaf6;
     border:1px solid #9fa8da; padding:4px 6px; cursor:pointer;
     border-radius:3px; font-size:12px; margin-bottom:4px;">
-    &#9654; Grouping / Filtering / Sorting
-  </button>
+    &#9654; Grouping / Filtering / Sorting</button>
   <div id="pp-gfs-panel" style="display:none;">
     <div style="font-weight:bold; margin:6px 0 2px;">Status</div>
     <label><input type="checkbox" id="pp-chk-ns" checked> Not Started</label><br>
@@ -301,7 +353,7 @@ class GanttForm(GanttFormTemplate):
   </div>
 </div>"""
 
-    # -- Details pane HTML --
+    # Details pane HTML
     det_display = 'flex' if self._details_visible else 'none'
     _tab_defs = [
       ('general','General'), ('status','Status'), ('codes','Codes'),
@@ -337,8 +389,6 @@ class GanttForm(GanttFormTemplate):
       '</div>'
     )
 
-    # -- JS data payload --
-    # Includes projectName/importLabel so JS can inject them into the nav bar
     js_data = json.dumps({
       'traces':        traces,
       'layout':        layout,
@@ -348,41 +398,28 @@ class GanttForm(GanttFormTemplate):
       'weekTicks':     week_ticks,
       'barColCount':   bar_col_count,
       'colsPerWeek':   cols_per_week,
-      'toolbarH':      TOOLBAR_H,
       'detailsH':      DETAILS_H,
       'navH':          NAV_H,
       'colHeaderH':    COL_HEADER_H,
       'rowH':          ROW_HEIGHT,
-      'projectName':   self._project_name,
-      'importLabel':   self._import_label,
     })
 
-    # -- Shell HTML (no toolbar row) --
     html = f"""
 <div id="pp-shell" style="font-family:Arial,sans-serif; font-size:12px;">
 
   <div id="pp-main-row">
-
     <div id="pp-sidebar">{sidebar_html}</div>
-
     <div id="pp-gantt-area">
-
-      <!-- Unified header: col names LEFT, timescale RIGHT, same 48px height -->
       <div id="pp-col-header">
-
         <div id="pp-col-names" style="flex-shrink:0; overflow:hidden;
           display:flex; flex-direction:column; background:#1565c0;">
           <div style="height:24px; border-bottom:1px solid #0d47a1;
-            display:flex; align-items:center;">
-            {col_names_html}
-          </div>
+            display:flex; align-items:center;">{col_names_html}</div>
           <div style="height:24px;"></div>
         </div>
-
         <div id="pp-header-splitter-spacer"
           style="width:6px; min-width:6px; flex-shrink:0;
           background:#1565c0; border-right:1px solid #0d47a1;"></div>
-
         <div id="pp-header-right" style="flex:1; overflow:hidden;
           display:flex; flex-direction:column; background:#1565c0;">
           <div id="pp-header-months" style="height:24px; min-height:24px;
@@ -391,20 +428,15 @@ class GanttForm(GanttFormTemplate):
           <div id="pp-header-weeks" style="height:24px; min-height:24px;
             display:flex; overflow:hidden;"></div>
         </div>
-
       </div>
-
       <div id="pp-scroll-body">
-        <div id="pp-col-data">
-          {col_table_html}
-        </div>
+        <div id="pp-col-data">{col_table_html}</div>
         <div id="pp-splitter" title="Drag to resize columns"></div>
         <div id="pp-plot-pane">
           <div id="pp-plotly-div"
             style="height:{chart_height}px; min-width:600px;"></div>
         </div>
       </div>
-
     </div>
   </div>
 
@@ -441,7 +473,6 @@ class GanttForm(GanttFormTemplate):
   # --------------------------------------------------------------------------
 
   def _build_row_meta(self, tasks):
-    """Per-row metadata for JS collapse logic and click handling."""
     meta = []
     for idx, task in enumerate(tasks):
       row_type = task.get('row_type', 'TASK')
@@ -461,7 +492,6 @@ class GanttForm(GanttFormTemplate):
     return meta
 
   def _build_col_names_html(self, columns, col_widths):
-    """Column name cells for the LEFT side of pp-col-header."""
     parts = [
       '<div style="width:24px; min-width:24px; flex-shrink:0;'
       ' border-right:1px solid #0d47a1;"></div>'
@@ -479,8 +509,7 @@ class GanttForm(GanttFormTemplate):
     return ''.join(parts)
 
   def _build_col_table_html(self, tasks, columns, col_widths,
-                            collapse_state):
-    """Scrollable column data table."""
+                             collapse_state):
     parts   = []
     total_w = sum(col_widths) + 24
 
@@ -501,7 +530,7 @@ class GanttForm(GanttFormTemplate):
       if row_type == 'WBS':
         bg        = WBS_COLOURS.get(indent, WBS_COLOUR_DEFAULT)
         expanded  = collapse_state.get(wbs_id, True)
-        icon      = '▼' if expanded else '▶'
+        icon      = '\u25BC' if expanded else '\u25B6'
         indent_px = (indent - 1) * 12
         parts.append(
           f'<tr data-row-idx="{idx}" data-wbs-id="{wbs_id}"'
@@ -538,8 +567,6 @@ class GanttForm(GanttFormTemplate):
         parts.append('</tr>')
 
       else:
-        # TASK row — no inline onmouseover/onmouseout
-        # Hover and selection highlight are handled by JS
         indent_px = indent * 12
         parts.append(
           f'<tr data-row-idx="{idx}" data-task-id="{task_id}"'
@@ -574,7 +601,6 @@ class GanttForm(GanttFormTemplate):
 
   def _build_plotly_data(self, tasks, bar_col_count, ts_start, ts_end,
                           cols_per_week, n_rows, chart_height):
-    """Build Plotly traces and layout dict."""
     from datetime import date, timedelta
     try:
       ts_s = date.fromisoformat(ts_start)
@@ -697,7 +723,6 @@ class GanttForm(GanttFormTemplate):
     return traces, layout
 
   def _build_timescale_bands(self, ts_start, bar_col_count, cols_per_week):
-    """Month band and week tick data for the JS timescale header."""
     from datetime import date, timedelta
     try:
       ts_s = date.fromisoformat(ts_start)
@@ -744,41 +769,22 @@ class GanttForm(GanttFormTemplate):
   #  CALLBACKS FROM JS
   # ==========================================================================
 
-  def _on_change_project(self):
-    """Called from JS Change Project button."""
-    self._open_project_selector()
-
-  def _on_sidebar_toggled(self, visible):
-    """Called from JS after sidebar toggle (state already changed in JS)."""
-    self._sidebar_visible = visible
-
-  def _on_details_toggled(self, visible):
-    """Called from JS after details toggle (state already changed in JS)."""
-    self._details_visible = visible
-
   def _on_apply_filters(self):
-    """Called from JS Apply Filters button."""
     self._load_gantt()
 
   def _on_clear_filters(self):
-    """Called from JS Clear Filters button."""
     self._load_gantt()
 
   def _on_layout_change(self, layout_id):
-    """Called from JS layout dropdown."""
     if layout_id:
       self._current_layout_id = layout_id
 
   def _on_tab_click(self, tab_name):
-    """Called from JS details tab buttons."""
     self._active_tab = tab_name
     self._render_details_content(tab_name)
 
   def _on_gantt_click(self, point_data):
-    """
-    Called from JS when a bar, milestone, or table row is clicked.
-    Populates details pane from detail_cache (no server call needed).
-    """
+    """Called from JS when a bar, milestone, or table row is clicked."""
     try:
       task_id = str(point_data.get('text', '')).strip()
       if not task_id or task_id in ('', 'None', 'undefined', 'null'):
@@ -795,7 +801,6 @@ class GanttForm(GanttFormTemplate):
 
       self._selected_task_id = task_id
 
-      # Find activity ID and name for the header
       act_id, act_name = '', ''
       if self._gantt_data:
         for t in self._gantt_data.get('tasks', []):
@@ -806,13 +811,12 @@ class GanttForm(GanttFormTemplate):
             act_name = str(row_data[1]) if len(row_data) > 1 else ''
             break
 
-      # Update detail header spans
       anvil.js.call_js('_pp_setHtml', 'pp-det-id', act_id)
       anvil.js.call_js('_pp_setHtml', 'pp-det-name', act_name)
 
-      # Show details pane if hidden
       if not self._details_visible:
         self._details_visible = True
+        self._btn_details.text = 'Hide Details'
         anvil.js.call_js('_pp_toggleDetails', True)
 
       self._render_details_content(self._active_tab)
@@ -821,13 +825,11 @@ class GanttForm(GanttFormTemplate):
       print(f'[_on_gantt_click] ERROR: {e}')
 
   def _on_collapse_change(self, wbs_id, expanded):
-    """Save WBS collapse state when toggled."""
     if not hasattr(client_globals, "_collapse_state"):
       client_globals._collapse_state = {}
     client_globals._collapse_state[wbs_id] = expanded
 
   def _on_collapse_all(self, expanded):
-    """Save collapse state for all WBS nodes."""
     if not self._gantt_data:
       return
     if not hasattr(client_globals, "_collapse_state"):
@@ -839,14 +841,12 @@ class GanttForm(GanttFormTemplate):
           client_globals._collapse_state[wbs_id] = expanded
 
   # --------------------------------------------------------------------------
-  #  DETAILS CONTENT RENDERING
+  #  DETAILS CONTENT
   # --------------------------------------------------------------------------
 
   def _render_details_content(self, tab_name):
-    """Build details tab HTML and push to pp-det-content via JS."""
     self._active_tab = tab_name
 
-    # Update tab button styles
     _tabs = ['general', 'status', 'codes',
              'relationships', 'notebook', 'udfs']
     _tab_js_parts = []
@@ -891,7 +891,6 @@ class GanttForm(GanttFormTemplate):
     anvil.js.call_js('_pp_setHtml', 'pp-det-content', html)
 
   def _det_row(self, label, value):
-    """Single label+value row for details pane."""
     v = str(value) if value is not None else ''
     return (
       f'<div style="display:flex; margin-bottom:2px;">'
@@ -901,7 +900,7 @@ class GanttForm(GanttFormTemplate):
     )
 
   def _html_general(self, g):
-    rows = [
+    return ''.join([
       self._det_row('Calendar',         g.get('calendar_name', '')),
       self._det_row('Activity Type',    g.get('task_type', '')),
       self._det_row('Duration Type',    g.get('duration_type', '')),
@@ -913,11 +912,10 @@ class GanttForm(GanttFormTemplate):
       self._det_row('Free Float',       g.get('free_float_days', '')),
       self._det_row('Start',            g.get('start_date', '')),
       self._det_row('Finish',           g.get('finish_date', '')),
-    ]
-    return ''.join(rows)
+    ])
 
   def _html_status(self, g):
-    rows = [
+    return ''.join([
       self._det_row('Status',          g.get('status_code', '')),
       self._det_row('Phys % Complete', g.get('phys_complete_pct', '')),
       self._det_row('Actual Start',    g.get('act_start_date', '')),
@@ -928,8 +926,7 @@ class GanttForm(GanttFormTemplate):
       self._det_row('Late Finish',     g.get('late_end_date', '')),
       self._det_row('Target Start',    g.get('target_start_date', '')),
       self._det_row('Target Finish',   g.get('target_end_date', '')),
-    ]
-    return ''.join(rows)
+    ])
 
   def _html_codes(self, codes):
     if not codes:
@@ -938,8 +935,7 @@ class GanttForm(GanttFormTemplate):
       self._det_row(
         r[0] if r else '',
         f'{r[1]}  {r[2]}'.strip() if len(r) > 2 else ''
-      )
-      for r in codes
+      ) for r in codes
     )
 
   def _html_relationships(self, rels):
@@ -950,7 +946,7 @@ class GanttForm(GanttFormTemplate):
     if preds:
       for r in preds:
         lag     = f' lag {r["lag_days"]}d' if r.get('lag_days') else ''
-        driving = ' ★' if r.get('driving') else ''
+        driving = ' \u2605' if r.get('driving') else ''
         parts.append(self._det_row(
           r.get('task_code', ''),
           f'{r.get("rel_type","")} {lag}{driving}'
@@ -960,7 +956,6 @@ class GanttForm(GanttFormTemplate):
       parts.append(
         '<div style="color:#888; margin-bottom:6px;">None</div>'
       )
-
     parts.append(
       '<div style="font-weight:bold; margin:6px 0 4px;">Successors</div>'
     )
@@ -968,7 +963,7 @@ class GanttForm(GanttFormTemplate):
     if succs:
       for r in succs:
         lag     = f' lag {r["lag_days"]}d' if r.get('lag_days') else ''
-        driving = ' ★' if r.get('driving') else ''
+        driving = ' \u2605' if r.get('driving') else ''
         parts.append(self._det_row(
           r.get('task_code', ''),
           f'{r.get("rel_type","")} {lag}{driving}'
@@ -976,7 +971,6 @@ class GanttForm(GanttFormTemplate):
         ))
     else:
       parts.append('<div style="color:#888;">None</div>')
-
     return ''.join(parts)
 
   def _html_notebook(self, notes):
@@ -998,8 +992,7 @@ class GanttForm(GanttFormTemplate):
       self._det_row(
         r[0] if r else '',
         r[1] if len(r) > 1 else ''
-      )
-      for r in udfs
+      ) for r in udfs
     )
 
   # ==========================================================================
@@ -1007,7 +1000,6 @@ class GanttForm(GanttFormTemplate):
   # ==========================================================================
 
   def btn_logout_click(self, **event_args):
-    """Log out and return to login form."""
     try:
       token = client_globals.session_token
       if token:
