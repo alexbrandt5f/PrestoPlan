@@ -1,27 +1,17 @@
 components:
-- components:
-  - name: lbl_no_data
-    properties: {align: center, font_size: 14, foreground: '#888888', text: Select a project and import to view the Gantt chart., visible: true}
-    type: Label
-  - name: pnl_gantt_container
-    properties: {}
-    type: ColumnPanel
-  layout_properties: {slot: default}
+- layout_properties: {slot: default}
   name: content_panel
   properties: {}
   type: ColumnPanel
-- components:
-  - name: lbl_nav_user
-    properties: {text: ''}
-    type: Label
-  - event_bindings: {click: btn_logout_click}
-    name: btn_logout
-    properties: {text: Log Out}
-    type: Button
-  layout_properties: {slot: nav-right}
+- layout_properties: {slot: nav-right}
   name: navbar_links
   properties: {}
   type: FlowPanel
+- data_bindings: []
+  layout_properties: {slot: title}
+  name: button_1
+  properties: {icon: menu, text: button_1}
+  type: Button
 container:
   properties: {html: '@theme:standard-page.html'}
   type: HtmlTemplate
