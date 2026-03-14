@@ -28,6 +28,7 @@ interface Relationship {
   successor_activity_id: string;
   relationship_type: string;
   is_driving: boolean | null;
+  relationship_float_hours: number | null;
 }
 
 interface GanttChartAdvancedProps {
@@ -185,7 +186,7 @@ export default function GanttChartAdvanced({
   async function loadRelationships() {
     const { data } = await supabase
       .from('cpm_relationships')
-      .select('predecessor_activity_id, successor_activity_id, relationship_type, is_driving')
+      .select('predecessor_activity_id, successor_activity_id, relationship_type, is_driving, relationship_float_hours')
       .eq('schedule_version_id', scheduleVersionId);
 
     if (data) {
@@ -704,9 +705,41 @@ export default function GanttChartAdvanced({
       );
     }
 
+    // Determine if a relationship is driving using a fallback chain:
+    //   1. If is_driving is explicitly set in the database, use it
+    //   2. If relationship_float_hours === 0 (or very close to 0), it's driving
+    //   3. If relationship_float_hours is null (not computed), fall back to checking
+    //      whether the successor activity has zero total float (i.e. is on the critical path)
+    //      AND it's the predecessor with the latest finish date for that successor
+    function isDriving(rel: Relationship): boolean {
+      // Explicit database value takes priority
+      if (rel.is_driving === true) return true;
+      if (rel.is_driving === false) return false;
+
+      // Check relationship float (0 = driving, the predecessor that constrains the successor)
+      if (rel.relationship_float_hours !== null && rel.relationship_float_hours !== undefined) {
+        return Math.abs(rel.relationship_float_hours) < 0.01; // effectively zero
+      }
+
+      // Fallback: if successor is on the critical path (zero total float),
+      // consider this relationship driving. This is an approximation —
+      // in a schedule with multiple predecessors to the same critical activity,
+      // only one is truly driving, but this gives a reasonable visual indicator.
+      const succ = activityMap.get(rel.successor_activity_id);
+      if (succ && succ.total_float_hours !== null && Math.abs(succ.total_float_hours) < 0.01) {
+        return true;
+      }
+
+      return false;
+    }
+
     const filteredRels = layout.viewSettings.showDrivingOnly
-      ? relsToShow.filter(r => r.is_driving)
+      ? relsToShow.filter(r => isDriving(r))
       : relsToShow;
+
+    // Minimum horizontal stub length out of predecessor / into successor
+    const STUB = 8;
+    const ARROW_SIZE = 5;
 
     filteredRels.forEach(rel => {
       const pred = activityMap.get(rel.predecessor_activity_id);
@@ -719,52 +752,120 @@ export default function GanttChartAdvanced({
 
       if (predIndex === -1 || succIndex === -1) return;
 
-      const predY = HEADER_HEIGHT + (predIndex * ROW_HEIGHT) + ROW_HEIGHT - 2 - scrollTop;
-      const succY = HEADER_HEIGHT + (succIndex * ROW_HEIGHT) + ROW_HEIGHT - 2 - scrollTop;
+      // Y positions: center of each activity row
+      const predY = HEADER_HEIGHT + (predIndex * ROW_HEIGHT) + ROW_HEIGHT / 2 - scrollTop;
+      const succY = HEADER_HEIGHT + (succIndex * ROW_HEIGHT) + ROW_HEIGHT / 2 - scrollTop;
 
+      // X positions depend on relationship type (FS, SS, FF, SF)
+      const predStart = dateToX(new Date(pred.early_start)) - scrollLeft;
       const predFinish = dateToX(new Date(pred.early_finish)) - scrollLeft;
       const succStart = dateToX(new Date(succ.early_start)) - scrollLeft;
+      const succFinish = dateToX(new Date(succ.early_finish)) - scrollLeft;
 
-      ctx.strokeStyle = rel.is_driving ? '#4169E1' : '#6B9BD1';
-      ctx.lineWidth = rel.is_driving ? 3 : 2;
-      ctx.beginPath();
-      ctx.moveTo(predFinish, predY);
+      // Determine departure point (from predecessor) and arrival point (to successor)
+      // based on relationship type: FS, SS, FF, SF
+      const relType = (rel.relationship_type || 'FS').toUpperCase();
+      let fromX: number;
+      let toX: number;
+      let arrowDirection: 'right' | 'left';
 
-      const distX = succStart - predFinish;
-      const distY = Math.abs(succY - predY);
-      const maxAngle = 60;
-      const tan60 = Math.tan(maxAngle * Math.PI / 180);
-      const minHorizontal = distY / tan60;
-
-      if (distX > minHorizontal * 2) {
-        const midX = (predFinish + succStart) / 2;
-        const controlOffset = Math.min(distX * 0.3, 50);
-
-        ctx.bezierCurveTo(
-          predFinish + controlOffset, predY,
-          midX - controlOffset, predY,
-          midX, (predY + succY) / 2
-        );
-        ctx.bezierCurveTo(
-          midX + controlOffset, succY,
-          succStart - controlOffset, succY,
-          succStart, succY
-        );
+      if (relType === 'FS' || relType === 'PR_FS') {
+        fromX = predFinish;
+        toX = succStart;
+        arrowDirection = 'right';
+      } else if (relType === 'SS' || relType === 'PR_SS') {
+        fromX = predStart;
+        toX = succStart;
+        arrowDirection = 'right';
+      } else if (relType === 'FF' || relType === 'PR_FF') {
+        fromX = predFinish;
+        toX = succFinish;
+        arrowDirection = 'left';
+      } else if (relType === 'SF' || relType === 'PR_SF') {
+        fromX = predStart;
+        toX = succFinish;
+        arrowDirection = 'left';
       } else {
-        const horizontalDist = Math.max(minHorizontal, distX / 2);
-        ctx.lineTo(predFinish + horizontalDist, predY);
-        ctx.lineTo(succStart - horizontalDist, succY);
-        ctx.lineTo(succStart, succY);
+        fromX = predFinish;
+        toX = succStart;
+        arrowDirection = 'right';
+      }
+
+      // Determine if this specific relationship is driving
+      const relIsDriving = isDriving(rel);
+
+      // Color scheme:
+      //   Driving + successor on critical path → solid red (#E74C3C)
+      //   Driving + successor NOT on critical path → solid blue (#1B4F72)
+      //   Non-driving → dotted blue (#6B9BD1)
+      const succIsCritical = succ.is_critical === true ||
+        (succ.total_float_hours !== null && Math.abs(succ.total_float_hours) < 0.01);
+
+      let lineColor: string;
+      if (relIsDriving && succIsCritical) {
+        lineColor = '#E74C3C'; // red — driving + critical successor
+      } else if (relIsDriving) {
+        lineColor = '#1B4F72'; // dark navy — driving + non-critical successor
+      } else {
+        lineColor = '#6B9BD1'; // light blue — non-driving
+      }
+
+      ctx.strokeStyle = lineColor;
+      ctx.lineWidth = relIsDriving ? 2 : 1;
+      ctx.setLineDash(relIsDriving ? [] : [4, 3]); // solid if driving, dotted if not
+
+      ctx.beginPath();
+
+      // Orthogonal routing: horizontal stub → vertical drop → horizontal to target
+      const departsFromFinish = (relType === 'FS' || relType === 'PR_FS' || relType === 'FF' || relType === 'PR_FF');
+      const stubDirection = departsFromFinish ? 1 : -1;
+
+      if (arrowDirection === 'right') {
+        const stubEndX = fromX + (STUB * stubDirection);
+
+        if (stubEndX + STUB <= toX) {
+          // Simple case: enough horizontal room
+          ctx.moveTo(fromX, predY);
+          ctx.lineTo(stubEndX, predY);
+          ctx.lineTo(stubEndX, succY);
+          ctx.lineTo(toX, succY);
+        } else {
+          // Tight case: route around
+          const detourY = predY + (succY > predY ? 1 : -1) * (ROW_HEIGHT / 2 + 2);
+          ctx.moveTo(fromX, predY);
+          ctx.lineTo(stubEndX, predY);
+          ctx.lineTo(stubEndX, detourY);
+          ctx.lineTo(toX - STUB, detourY);
+          ctx.lineTo(toX - STUB, succY);
+          ctx.lineTo(toX, succY);
+        }
+      } else {
+        // Arrow points left (into a finish): FF or SF
+        const stubEndX = fromX + (STUB * stubDirection);
+        const arriveStubX = toX + STUB;
+        ctx.moveTo(fromX, predY);
+        ctx.lineTo(stubEndX, predY);
+        const vertX = Math.max(stubEndX, arriveStubX);
+        ctx.lineTo(vertX, predY);
+        ctx.lineTo(vertX, succY);
+        ctx.lineTo(toX, succY);
       }
 
       ctx.stroke();
+      ctx.setLineDash([]); // reset dash pattern
 
-      const arrowSize = 5;
-      ctx.fillStyle = rel.is_driving ? '#4169E1' : '#6B9BD1';
+      // Draw arrowhead (always solid, matching line color)
+      ctx.fillStyle = lineColor;
       ctx.beginPath();
-      ctx.moveTo(succStart, succY);
-      ctx.lineTo(succStart - arrowSize, succY - arrowSize);
-      ctx.lineTo(succStart - arrowSize, succY + arrowSize);
+      if (arrowDirection === 'right') {
+        ctx.moveTo(toX, succY);
+        ctx.lineTo(toX - ARROW_SIZE, succY - ARROW_SIZE);
+        ctx.lineTo(toX - ARROW_SIZE, succY + ARROW_SIZE);
+      } else {
+        ctx.moveTo(toX, succY);
+        ctx.lineTo(toX + ARROW_SIZE, succY - ARROW_SIZE);
+        ctx.lineTo(toX + ARROW_SIZE, succY + ARROW_SIZE);
+      }
       ctx.closePath();
       ctx.fill();
     });
