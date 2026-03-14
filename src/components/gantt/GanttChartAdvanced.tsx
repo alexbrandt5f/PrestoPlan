@@ -240,19 +240,26 @@ export default function GanttChartAdvanced({
     return { minDate: min, maxDate: max, timelineWidth: width };
   }, [activities, pixelsPerDay]);
 
+  // ResizeObserver detects:
+  //   1. Initial paint (when container goes from 0x0 to actual size)
+  //   2. Browser window resize
+  //   3. Splitter drag (ResizablePanels changes container width/height)
+  // This replaces the old window.addEventListener('resize') which missed cases 1 and 3.
   useEffect(() => {
-    function handleResize() {
-      if (containerRef.current) {
-        setViewportSize({
-          width: containerRef.current.clientWidth,
-          height: containerRef.current.clientHeight
-        });
-      }
-    }
+    const container = containerRef.current;
+    if (!container) return;
 
-    handleResize();
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect;
+        if (width > 0 && height > 0) {
+          setViewportSize({ width: Math.floor(width), height: Math.floor(height) });
+        }
+      }
+    });
+
+    observer.observe(container);
+    return () => observer.disconnect();
   }, []);
 
   useEffect(() => {
