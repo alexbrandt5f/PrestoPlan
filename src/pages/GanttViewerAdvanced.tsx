@@ -124,6 +124,7 @@ function GanttViewerContent() {
         const map = new Map();
         wbsRes.data.forEach(wbs => map.set(wbs.id, wbs));
         setWbsMap(map);
+        console.log('DEBUG: wbsMap size:', map.size);
       }
 
       setLoadingProgress(50);
@@ -144,6 +145,7 @@ function GanttViewerContent() {
 
       const firstBatchActivities = firstBatch || [];
       setActivities(firstBatchActivities);
+      console.log('DEBUG: activities loaded:', firstBatchActivities.length);
 
       await Promise.all([
         loadCodeAssignmentsBatched([firstBatchActivities], 0),
@@ -357,6 +359,7 @@ function GanttViewerContent() {
   }, [activities, layout.columns, codeAssignments, customFieldValues]);
 
   const groupedActivities = useMemo(() => {
+    console.log('DEBUG: groupedActivities input - processedActivities:', processedActivities.length, 'grouping type:', layout.grouping.type, 'wbsMap size:', wbsMap.size);
     let result = [...processedActivities];
 
     if (layout.filters.length > 0) {
@@ -388,7 +391,9 @@ function GanttViewerContent() {
     }
 
     if (layout.grouping.type === 'none') {
-      return result.map(act => ({ type: 'activity' as const, activity: act }));
+      const output = result.map(act => ({ type: 'activity' as const, activity: act }));
+      console.log('DEBUG: groupedActivities output length:', output.length);
+      return output;
     }
 
     if (layout.grouping.type === 'wbs') {
@@ -401,7 +406,9 @@ function GanttViewerContent() {
 
       if (wbsArray.length === 0 || rootWbs.length === 0) {
         // No WBS data available — show activities as a flat list
-        return result.map(act => ({ type: 'activity' as const, activity: act }));
+        const output = result.map(act => ({ type: 'activity' as const, activity: act }));
+        console.log('DEBUG: groupedActivities output length:', output.length);
+        return output;
       }
 
       const wbsHierarchy: Array<{ type: 'group' | 'activity'; groupKey?: string; groupLabel?: string; activities?: Activity[]; activity?: Activity; level?: number }> = [];
@@ -463,9 +470,12 @@ function GanttViewerContent() {
 
       // Final safety net: if hierarchy is still empty, fall back to flat list
       if (wbsHierarchy.length === 0) {
-        return result.map(act => ({ type: 'activity' as const, activity: act }));
+        const output = result.map(act => ({ type: 'activity' as const, activity: act }));
+        console.log('DEBUG: groupedActivities output length:', output.length);
+        return output;
       }
 
+      console.log('DEBUG: groupedActivities output length:', wbsHierarchy.length);
       return wbsHierarchy;
     }
 
@@ -503,6 +513,7 @@ function GanttViewerContent() {
       });
     });
 
+    console.log('DEBUG: groupedActivities output length:', finalResult.length);
     return finalResult;
   }, [processedActivities, layout, codeAssignments, wbsMap]);
 
