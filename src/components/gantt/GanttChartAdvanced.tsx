@@ -173,10 +173,10 @@ export default function GanttChartAdvanced({
   }, [activities]);
 
   const visibleGroupedActivities = useMemo(() => {
-    const result: typeof visibleGroupedActivities = [];
+    const result: Array<{ type: 'group' | 'activity'; groupKey?: string; groupLabel?: string; activities?: Activity[]; activity?: Activity; level?: number }> = [];
     const collapsedStack: Array<{ key: string; level: number }> = [];
 
-    for (const item of visibleGroupedActivities) {
+    for (const item of groupedActivities) {
       if (item.type === 'group') {
         while (collapsedStack.length > 0 && collapsedStack[collapsedStack.length - 1].level >= (item.level || 0)) {
           collapsedStack.pop();
@@ -197,7 +197,7 @@ export default function GanttChartAdvanced({
     }
 
     return result;
-  }, [visibleGroupedActivities, collapsedGroups]);
+  }, [groupedActivities, collapsedGroups]);
 
   const { minDate, maxDate, timelineWidth } = useMemo(() => {
     if (activities.length === 0) {
