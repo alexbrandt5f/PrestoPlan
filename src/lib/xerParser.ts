@@ -477,44 +477,132 @@ async function updateDrivingRelationships(
   versionId: string,
   onProgress?: (processed: number, total: number) => void
 ) {
-  const { data: activities } = await supabase
-    .from('cpm_activities')
-    .select('id')
-    .eq('schedule_version_id', versionId);
+  // The relationship_float_hours field was already computed by the relationship
+  // transform worker from P6's aref (Relationship Early Finish) and arls
+  // (Relationship Late Start) dates: relationship_total_float = arls - aref.
+  //
+  // P6 computed these dates during its scheduling calculation using the correct
+  // predecessor/successor calendars, so this is calendar-aware without us needing
+  // to parse P6's calendar format.
+  //
+  // The driving predecessor for each successor is the relationship with the
+  // minimum relationship_float_hours that equals zero (or effectively zero).
+  // Reference: Planning Planet forum and Tom Boyle's blog on driving logic -
+  // "a driving relationship is identified when the Relationship Successor
+  // Free Float equals zero."
 
-  if (!activities || activities.length === 0) return;
+  // Step 1: Load all relationships that have relationship_float_hours computed
+  let allRelationships: any[] = [];
+  const REL_BATCH = 1000;
+  let from = 0;
+  let hasMore = true;
 
-  const total = activities.length;
+  while (hasMore) {
+    const { data: relBatch, error: relError } = await supabase
+      .from('cpm_relationships')
+      .select('id, successor_activity_id, relationship_float_hours')
+      .eq('schedule_version_id', versionId)
+      .range(from, from + REL_BATCH - 1);
+
+    if (relError) {
+      console.error('Error loading relationships for driving calc:', relError);
+      break;
+    }
+
+    if (relBatch && relBatch.length > 0) {
+      allRelationships = allRelationships.concat(relBatch);
+      from += REL_BATCH;
+      hasMore = relBatch.length === REL_BATCH;
+    } else {
+      hasMore = false;
+    }
+  }
+
+  if (allRelationships.length === 0) return;
+
+  const total = allRelationships.length;
+  onProgress?.(0, total);
+
+  // Step 2: Group relationships by successor activity
+  const relsBySuccessor = new Map<string, any[]>();
+  allRelationships.forEach(rel => {
+    if (!rel.successor_activity_id) return;
+    if (!relsBySuccessor.has(rel.successor_activity_id)) {
+      relsBySuccessor.set(rel.successor_activity_id, []);
+    }
+    relsBySuccessor.get(rel.successor_activity_id)!.push(rel);
+  });
+
+  // Step 3: For each successor, find the driving predecessor.
+  // The driving relationship has the minimum relationship_float_hours = 0.
+  // If relationship_float_hours is null (aref/arls not in XER), we can't determine
+  // driving status and leave is_driving as null.
+  const drivingIds = new Set<string>();
+  const nonDrivingIds = new Set<string>();
+
+  relsBySuccessor.forEach((rels) => {
+    // Separate rels with computed float vs null float
+    const withFloat = rels.filter((r: any) => r.relationship_float_hours !== null && r.relationship_float_hours !== undefined);
+    const withoutFloat = rels.filter((r: any) => r.relationship_float_hours === null || r.relationship_float_hours === undefined);
+
+    if (withFloat.length === 0) {
+      // No float data available — can't determine driving, leave as null
+      return;
+    }
+
+    // Sort by float ascending — lowest float first
+    withFloat.sort((a: any, b: any) => a.relationship_float_hours - b.relationship_float_hours);
+
+    // The first one (lowest float) is driving if its float is effectively zero
+    const lowestFloat = withFloat[0].relationship_float_hours;
+    if (Math.abs(lowestFloat) < 0.01) {
+      drivingIds.add(withFloat[0].id);
+    } else {
+      nonDrivingIds.add(withFloat[0].id);
+    }
+
+    // All others for this successor are non-driving
+    for (let i = 1; i < withFloat.length; i++) {
+      nonDrivingIds.add(withFloat[i].id);
+    }
+
+    // Relationships without float data remain null (not added to either set)
+  });
+
+  // Step 4: Batch update is_driving in the database
+  // Use two bulk updates: one for driving=true, one for driving=false
+  const UPDATE_BATCH = 200;
   let processed = 0;
 
-  const batchSize = 50;
-  for (let i = 0; i < activities.length; i += batchSize) {
-    const batch = activities.slice(i, i + batchSize);
+  // Update driving relationships
+  const drivingArray = Array.from(drivingIds);
+  for (let i = 0; i < drivingArray.length; i += UPDATE_BATCH) {
+    const batch = drivingArray.slice(i, i + UPDATE_BATCH);
+    const { error } = await supabase
+      .from('cpm_relationships')
+      .update({ is_driving: true })
+      .in('id', batch);
 
-    await Promise.all(batch.map(async (activity) => {
-      const { data: relationships } = await supabase
-        .from('cpm_relationships')
-        .select('id, relationship_float_hours')
-        .eq('successor_activity_id', activity.id)
-        .not('relationship_float_hours', 'is', null)
-        .order('relationship_float_hours', { ascending: true });
+    if (error) {
+      console.error('Error setting driving relationships:', error);
+    }
 
-      if (relationships && relationships.length > 0) {
-        const drivingRel = relationships[0];
-        if (drivingRel.relationship_float_hours !== null && drivingRel.relationship_float_hours >= 0) {
-          await supabase
-            .from('cpm_relationships')
-            .update({ is_driving: true })
-            .eq('id', drivingRel.id);
+    processed += batch.length;
+    onProgress?.(processed, total);
+  }
 
-          await supabase
-            .from('cpm_relationships')
-            .update({ is_driving: false })
-            .eq('successor_activity_id', activity.id)
-            .neq('id', drivingRel.id);
-        }
-      }
-    }));
+  // Update non-driving relationships
+  const nonDrivingArray = Array.from(nonDrivingIds);
+  for (let i = 0; i < nonDrivingArray.length; i += UPDATE_BATCH) {
+    const batch = nonDrivingArray.slice(i, i + UPDATE_BATCH);
+    const { error } = await supabase
+      .from('cpm_relationships')
+      .update({ is_driving: false })
+      .in('id', batch);
+
+    if (error) {
+      console.error('Error setting non-driving relationships:', error);
+    }
 
     processed += batch.length;
     onProgress?.(processed, total);
