@@ -41,18 +41,29 @@ self.onmessage = (e: MessageEvent<TransformMessage>) => {
           record.relationship_type = value.startsWith('PR_') ? value.substring(3) : value;
         } else if (field === 'lag_hr_cnt') {
           record.lag_hours = parseFloat(value) || 0;
-        } else if (field === 'aref_date') {
+        } else if (field === 'aref' || field === 'aref_date') {
+          // aref = Relationship Early Finish (computed by P6 during forward pass)
           record.aref = value || null;
-        } else if (field === 'arls_date') {
+        } else if (field === 'arls' || field === 'arls_date') {
+          // arls = Relationship Late Start (computed by P6 during backward pass)
           record.arls = value || null;
+        } else if (field === 'float_path') {
+          // Multiple Float Path number assigned by P6
+          record.float_path = value ? parseInt(value, 10) : null;
         }
       });
 
+      // Compute relationship total float from P6's pre-calculated dates.
+      // Relationship Total Float = arls - aref (in hours)
+      // This is calendar-aware because P6 already computed these dates
+      // using the correct predecessor/successor calendars.
       if (record.aref && record.arls) {
         const arefDate = new Date(record.aref);
         const arlsDate = new Date(record.arls);
-        const diffMs = arlsDate.getTime() - arefDate.getTime();
-        record.relationship_float_hours = diffMs / (1000 * 60 * 60);
+        if (!isNaN(arefDate.getTime()) && !isNaN(arlsDate.getTime())) {
+          const diffMs = arlsDate.getTime() - arefDate.getTime();
+          record.relationship_float_hours = Math.round((diffMs / (1000 * 60 * 60)) * 100) / 100;
+        }
       }
 
       return record;
