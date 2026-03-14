@@ -107,6 +107,8 @@ function GanttViewerContent() {
       if (projectRes.error) throw projectRes.error;
       if (versionRes.error) throw versionRes.error;
       if (calendarsRes.error) throw calendarsRes.error;
+      // WBS errors are logged but don't crash — the Gantt will fall back to a flat list
+      if (wbsRes.error) console.warn('WBS query failed, grouping will fall back to flat list:', wbsRes.error);
 
       if (!versionRes.data) {
         showToast('Schedule version not found', 'error');
@@ -390,22 +392,33 @@ function GanttViewerContent() {
     }
 
     if (layout.grouping.type === 'wbs') {
-      const wbsHierarchy: Array<{ type: 'group' | 'activity'; groupKey?: string; groupLabel?: string; activities?: Activity[]; activity?: Activity; level?: number }> = [];
-
-      const wbsActivities = new Map<string, Activity[]>();
-      result.forEach(activity => {
-        if (activity.wbs_id) {
-          if (!wbsActivities.has(activity.wbs_id)) {
-            wbsActivities.set(activity.wbs_id, []);
-          }
-          wbsActivities.get(activity.wbs_id)!.push(activity);
-        }
-      });
-
+      // Defensive: if wbsMap is empty or has no root nodes, fall back to flat list
+      // rather than returning an empty array (which causes a blank screen).
       const wbsArray = Array.from(wbsMap.values());
       const rootWbs = wbsArray
         .filter(w => !w.parent_wbs_id)
         .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+
+      if (wbsArray.length === 0 || rootWbs.length === 0) {
+        // No WBS data available — show activities as a flat list
+        return result.map(act => ({ type: 'activity' as const, activity: act }));
+      }
+
+      const wbsHierarchy: Array<{ type: 'group' | 'activity'; groupKey?: string; groupLabel?: string; activities?: Activity[]; activity?: Activity; level?: number }> = [];
+
+      const wbsActivities = new Map<string, Activity[]>();
+      const orphanedActivities: Activity[] = [];
+      result.forEach(activity => {
+        if (activity.wbs_id && wbsMap.has(activity.wbs_id)) {
+          if (!wbsActivities.has(activity.wbs_id)) {
+            wbsActivities.set(activity.wbs_id, []);
+          }
+          wbsActivities.get(activity.wbs_id)!.push(activity);
+        } else {
+          // Activity has no wbs_id or its wbs_id doesn't match any known WBS node
+          orphanedActivities.push(activity);
+        }
+      });
 
       function addWbsHierarchy(wbsId: string, level: number = 0) {
         const wbs = wbsMap.get(wbsId);
@@ -432,6 +445,26 @@ function GanttViewerContent() {
       }
 
       rootWbs.forEach(wbs => addWbsHierarchy(wbs.id));
+
+      // Append any orphaned activities (no wbs_id or unrecognized wbs_id)
+      // so they don't silently disappear
+      if (orphanedActivities.length > 0) {
+        wbsHierarchy.push({
+          type: 'group',
+          groupKey: '__orphaned__',
+          groupLabel: '(No WBS)',
+          activities: orphanedActivities,
+          level: 0
+        });
+        orphanedActivities.forEach(activity => {
+          wbsHierarchy.push({ type: 'activity', activity });
+        });
+      }
+
+      // Final safety net: if hierarchy is still empty, fall back to flat list
+      if (wbsHierarchy.length === 0) {
+        return result.map(act => ({ type: 'activity' as const, activity: act }));
+      }
 
       return wbsHierarchy;
     }
