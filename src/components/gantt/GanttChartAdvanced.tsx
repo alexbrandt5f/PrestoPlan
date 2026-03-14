@@ -106,6 +106,33 @@ export default function GanttChartAdvanced({
     return () => window.removeEventListener('collapsed-groups-change', handleCollapsedGroupsChange);
   }, []);
 
+  const visibleGroupedActivities: Array<{ type: 'group' | 'activity'; groupKey?: string; groupLabel?: string; activities?: Activity[]; activity?: Activity; level?: number }> = useMemo(() => {
+    const result: Array<{ type: 'group' | 'activity'; groupKey?: string; groupLabel?: string; activities?: Activity[]; activity?: Activity; level?: number }> = [];
+    const collapsedStack: Array<{ key: string; level: number }> = [];
+
+    for (const item of groupedActivities) {
+      if (item.type === 'group') {
+        while (collapsedStack.length > 0 && collapsedStack[collapsedStack.length - 1].level >= (item.level || 0)) {
+          collapsedStack.pop();
+        }
+
+        if (collapsedStack.length === 0) {
+          result.push(item);
+        }
+
+        if (collapsedGroups.has(item.groupKey!)) {
+          collapsedStack.push({ key: item.groupKey!, level: item.level || 0 });
+        }
+      } else if (item.type === 'activity') {
+        if (collapsedStack.length === 0) {
+          result.push(item);
+        }
+      }
+    }
+
+    return result;
+  }, [groupedActivities, collapsedGroups]);
+
   useEffect(() => {
     if (!selectedActivity || !scrollContainerRef.current) return;
 
@@ -171,33 +198,6 @@ export default function GanttChartAdvanced({
     activities.forEach(act => map.set(act.id, act));
     return map;
   }, [activities]);
-
-  const visibleGroupedActivities = useMemo(() => {
-    const result: Array<{ type: 'group' | 'activity'; groupKey?: string; groupLabel?: string; activities?: Activity[]; activity?: Activity; level?: number }> = [];
-    const collapsedStack: Array<{ key: string; level: number }> = [];
-
-    for (const item of groupedActivities) {
-      if (item.type === 'group') {
-        while (collapsedStack.length > 0 && collapsedStack[collapsedStack.length - 1].level >= (item.level || 0)) {
-          collapsedStack.pop();
-        }
-
-        if (collapsedStack.length === 0) {
-          result.push(item);
-        }
-
-        if (collapsedGroups.has(item.groupKey!)) {
-          collapsedStack.push({ key: item.groupKey!, level: item.level || 0 });
-        }
-      } else if (item.type === 'activity') {
-        if (collapsedStack.length === 0) {
-          result.push(item);
-        }
-      }
-    }
-
-    return result;
-  }, [groupedActivities, collapsedGroups]);
 
   const { minDate, maxDate, timelineWidth } = useMemo(() => {
     if (activities.length === 0) {
