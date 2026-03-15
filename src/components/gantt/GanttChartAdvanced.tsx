@@ -110,24 +110,6 @@ export default function GanttChartAdvanced({
     return () => window.removeEventListener('collapsed-groups-change', handleCollapsedGroupsChange);
   }, []);
 
-  useEffect(() => {
-    if (!selectedActivity || !scrollContainerRef.current) return;
-
-    const rowIndex = visibleGroupedActivities.findIndex(item =>
-      item.type === 'activity' && item.activity?.id === selectedActivity.id
-    );
-
-    if (rowIndex !== -1) {
-      const scrollTop = rowIndex * ROW_HEIGHT + HEADER_HEIGHT;
-      const containerHeight = scrollContainerRef.current.clientHeight;
-      const currentScrollTop = scrollContainerRef.current.scrollTop;
-
-      if (scrollTop < currentScrollTop || scrollTop > currentScrollTop + containerHeight - ROW_HEIGHT) {
-        scrollContainerRef.current.scrollTop = scrollTop - containerHeight / 2 + ROW_HEIGHT / 2;
-      }
-    }
-  }, [selectedActivity, visibleGroupedActivities]);
-
   const visibleGroupedActivities: Array<{ type: 'group' | 'activity'; groupKey?: string; groupLabel?: string; activities?: Activity[]; activity?: Activity; level?: number }> = useMemo(() => {
     const result: Array<{ type: 'group' | 'activity'; groupKey?: string; groupLabel?: string; activities?: Activity[]; activity?: Activity; level?: number }> = [];
     const collapsedStack: Array<{ key: string; level: number }> = [];
@@ -174,13 +156,25 @@ export default function GanttChartAdvanced({
     const visibleLeft = container.scrollLeft;
     const visibleRight = visibleLeft + container.clientWidth;
 
-    if (x1 >= visibleLeft && x2 <= visibleRight) {
+    const scrollTop = selectedIndex * ROW_HEIGHT;
+    const containerHeight = container.clientHeight;
+    const currentScrollTop = container.scrollTop;
+    const visibleTop = currentScrollTop;
+    const visibleBottom = currentScrollTop + containerHeight;
+
+    const needsHorizontalScroll = x1 < visibleLeft || x2 > visibleRight;
+    const needsVerticalScroll = scrollTop < visibleTop || scrollTop > visibleBottom - ROW_HEIGHT;
+
+    if (!needsHorizontalScroll && !needsVerticalScroll) {
       return;
     }
 
     const targetScrollLeft = Math.max(0, x1 - container.clientWidth / 4);
+    const targetScrollTop = Math.max(0, scrollTop - containerHeight / 2 + ROW_HEIGHT / 2);
     const startScrollLeft = container.scrollLeft;
-    const distance = targetScrollLeft - startScrollLeft;
+    const startScrollTop = container.scrollTop;
+    const distanceX = targetScrollLeft - startScrollLeft;
+    const distanceY = targetScrollTop - startScrollTop;
     const duration = 500;
     const startTime = performance.now();
 
@@ -193,7 +187,12 @@ export default function GanttChartAdvanced({
       const progress = Math.min(elapsed / duration, 1);
       const eased = easeInOutCubic(progress);
 
-      container.scrollLeft = startScrollLeft + distance * eased;
+      if (needsHorizontalScroll) {
+        container.scrollLeft = startScrollLeft + distanceX * eased;
+      }
+      if (needsVerticalScroll) {
+        container.scrollTop = startScrollTop + distanceY * eased;
+      }
 
       if (progress < 1) {
         requestAnimationFrame(animate);

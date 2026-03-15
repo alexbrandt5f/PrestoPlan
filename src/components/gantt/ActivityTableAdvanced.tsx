@@ -352,7 +352,7 @@ export default function ActivityTableAdvanced({
   useEffect(() => {
     if (!selectedActivity || !scrollContainerRef.current) return;
 
-    const rowIndex = visibleGroupedActivities.findIndex(item =>
+    const rowIndex = groupedActivities.findIndex(item =>
       item.type === 'activity' && item.activity?.id === selectedActivity.id
     );
 
@@ -365,7 +365,7 @@ export default function ActivityTableAdvanced({
         scrollContainerRef.current.scrollTop = scrollTop - containerHeight / 2 + ROW_HEIGHT / 2;
       }
     }
-  }, [selectedActivity, visibleGroupedActivities]);
+  }, [selectedActivity, groupedActivities]);
 
   function toggleGroup(groupKey: string) {
     const newCollapsed = new Set(collapsedGroups);
