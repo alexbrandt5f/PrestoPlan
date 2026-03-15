@@ -289,6 +289,61 @@ export default function ActivityTableAdvanced({
     return () => window.removeEventListener('gantt-scroll', handleGanttScroll);
   }, []);
 
+  const flatActivities = useMemo(() => {
+    return groupedActivities
+      .filter(item => item.type === 'activity')
+      .map(item => item.activity!);
+  }, [groupedActivities]);
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+      if ((e.target as HTMLElement).tagName === 'INPUT' || (e.target as HTMLElement).tagName === 'TEXTAREA') return;
+
+      e.preventDefault();
+
+      if (flatActivities.length === 0) return;
+
+      const currentIndex = selectedActivity
+        ? flatActivities.findIndex(a => a.id === selectedActivity.id)
+        : -1;
+
+      let newIndex: number;
+      if (e.key === 'ArrowDown') {
+        newIndex = currentIndex < flatActivities.length - 1 ? currentIndex + 1 : currentIndex;
+      } else {
+        newIndex = currentIndex > 0 ? currentIndex - 1 : 0;
+      }
+
+      if (newIndex >= 0 && newIndex < flatActivities.length) {
+        const newActivity = flatActivities[newIndex];
+        onSelectActivity(newActivity);
+
+        if (scrollContainerRef.current) {
+          const visualIndex = groupedActivities.findIndex(item =>
+            item.type === 'activity' && item.activity?.id === newActivity.id
+          );
+
+          if (visualIndex >= 0) {
+            const rowTop = visualIndex * ROW_HEIGHT;
+            const rowBottom = rowTop + ROW_HEIGHT;
+            const containerHeight = scrollContainerRef.current.clientHeight;
+            const scrollTop = scrollContainerRef.current.scrollTop;
+
+            if (rowBottom > scrollTop + containerHeight) {
+              scrollContainerRef.current.scrollTop = rowBottom - containerHeight;
+            } else if (rowTop < scrollTop) {
+              scrollContainerRef.current.scrollTop = rowTop;
+            }
+          }
+        }
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [flatActivities, groupedActivities, selectedActivity, onSelectActivity]);
+
   function formatValue(value: any, column: any, activity: Activity): string {
     if (value === null || value === undefined) return '-';
 

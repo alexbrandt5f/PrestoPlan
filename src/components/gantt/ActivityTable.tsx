@@ -134,6 +134,49 @@ export default function ActivityTable({ activities, calendars, selectedActivity,
     return () => window.removeEventListener('gantt-scroll', handleGanttScroll);
   }, []);
 
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+      if ((e.target as HTMLElement).tagName === 'INPUT' || (e.target as HTMLElement).tagName === 'TEXTAREA') return;
+
+      e.preventDefault();
+
+      if (sortedActivities.length === 0) return;
+
+      const currentIndex = selectedActivity
+        ? sortedActivities.findIndex(a => a.id === selectedActivity.id)
+        : -1;
+
+      let newIndex: number;
+      if (e.key === 'ArrowDown') {
+        newIndex = currentIndex < sortedActivities.length - 1 ? currentIndex + 1 : currentIndex;
+      } else {
+        newIndex = currentIndex > 0 ? currentIndex - 1 : 0;
+      }
+
+      if (newIndex >= 0 && newIndex < sortedActivities.length) {
+        const newActivity = sortedActivities[newIndex];
+        onSelectActivity(newActivity);
+
+        if (scrollContainerRef.current) {
+          const rowTop = newIndex * ROW_HEIGHT;
+          const rowBottom = rowTop + ROW_HEIGHT;
+          const containerHeight = scrollContainerRef.current.clientHeight;
+          const scrollTop = scrollContainerRef.current.scrollTop;
+
+          if (rowBottom > scrollTop + containerHeight) {
+            scrollContainerRef.current.scrollTop = rowBottom - containerHeight;
+          } else if (rowTop < scrollTop) {
+            scrollContainerRef.current.scrollTop = rowTop;
+          }
+        }
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [sortedActivities, selectedActivity, onSelectActivity]);
+
   function formatDate(dateStr: string | null): string {
     if (!dateStr) return '-';
     const date = new Date(dateStr);
