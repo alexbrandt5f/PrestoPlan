@@ -498,7 +498,7 @@ export default function ActivityDetailTabs({
                             <th className="px-2 py-1 text-left font-medium text-gray-700 w-20">Activity ID</th>
                             <th className="px-2 py-1 text-left font-medium text-gray-700">Activity Name</th>
                             <th className="px-2 py-1 text-left font-medium text-gray-700 w-16">Type/Lag</th>
-                            <th className="px-2 py-1 text-right font-medium text-gray-700 w-16">Rel. Gap</th>
+                            <th className="px-2 py-1 text-right font-medium text-gray-700 w-16">Rel Free Float</th>
                             <th className="px-2 py-1 text-center font-medium text-gray-700 w-16">Driving</th>
                             <th className="px-2 py-1 text-center font-medium text-gray-700 w-20">Action</th>
                           </tr>
@@ -519,7 +519,7 @@ export default function ActivityDetailTabs({
                                 <td className="px-2 py-1">{pred.activity_id_display}</td>
                                 <td className="px-2 py-1 truncate" title={pred.activity_name}>{pred.activity_name}</td>
                                 <td className="px-2 py-1 tabular-nums">{typeLag}</td>
-                                <td className="px-2 py-1 tabular-nums text-right">{rel.relationship_float_hours !== null && rel.relationship_float_hours !== undefined ? rel.relationship_float_hours.toFixed(1) : '-'}</td>
+                                <td className="px-2 py-1 tabular-nums text-right">{rel.relationship_float_hours !== null && rel.relationship_float_hours !== undefined ? Number(rel.relationship_float_hours).toFixed(0) : '-'}</td>
                                 <td className="px-2 py-1 text-center">
                                   <input
                                     type="checkbox"
@@ -559,7 +559,7 @@ export default function ActivityDetailTabs({
                             <th className="px-2 py-1 text-left font-medium text-gray-700 w-20">Activity ID</th>
                             <th className="px-2 py-1 text-left font-medium text-gray-700">Activity Name</th>
                             <th className="px-2 py-1 text-left font-medium text-gray-700 w-16">Type/Lag</th>
-                            <th className="px-2 py-1 text-right font-medium text-gray-700 w-16">Rel. Gap</th>
+                            <th className="px-2 py-1 text-right font-medium text-gray-700 w-16">Rel Free Float</th>
                             <th className="px-2 py-1 text-center font-medium text-gray-700 w-16">Driving</th>
                             <th className="px-2 py-1 text-center font-medium text-gray-700 w-20">Action</th>
                           </tr>
@@ -580,7 +580,7 @@ export default function ActivityDetailTabs({
                                 <td className="px-2 py-1">{succ.activity_id_display}</td>
                                 <td className="px-2 py-1 truncate" title={succ.activity_name}>{succ.activity_name}</td>
                                 <td className="px-2 py-1 tabular-nums">{typeLag}</td>
-                                <td className="px-2 py-1 tabular-nums text-right">{rel.relationship_float_hours !== null && rel.relationship_float_hours !== undefined ? rel.relationship_float_hours.toFixed(1) : '-'}</td>
+                                <td className="px-2 py-1 tabular-nums text-right">{rel.relationship_float_hours !== null && rel.relationship_float_hours !== undefined ? Number(rel.relationship_float_hours).toFixed(0) : '-'}</td>
                                 <td className="px-2 py-1 text-center">
                                   <input
                                     type="checkbox"

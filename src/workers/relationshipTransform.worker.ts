@@ -44,25 +44,12 @@ self.onmessage = (e: MessageEvent<TransformMessage>) => {
         } else if (field === 'float_path') {
           // Multiple Float Path number assigned by P6
           record.float_path = value ? parseInt(value, 10) : null;
+        } else if (field === 'aref' || field === 'aref_date') {
+          record.aref = value || null;
+        } else if (field === 'arls' || field === 'arls_date') {
+          record.arls = value || null;
         }
       });
-
-      // Compute relationship total float from P6's pre-calculated dates.
-      // aref = Relationship Early Finish, arls = Relationship Late Start
-      // Relationship Total Float = arls - aref (in hours)
-      // These are stored in original_data but NOT as separate DB columns —
-      // we only store the computed relationship_float_hours.
-      const aref = record.original_data['aref'] || record.original_data['aref_date'] || null;
-      const arls = record.original_data['arls'] || record.original_data['arls_date'] || null;
-
-      if (aref && arls) {
-        const arefDate = new Date(aref);
-        const arlsDate = new Date(arls);
-        if (!isNaN(arefDate.getTime()) && !isNaN(arlsDate.getTime())) {
-          const diffMs = arlsDate.getTime() - arefDate.getTime();
-          record.relationship_float_hours = Math.round((diffMs / (1000 * 60 * 60)) * 100) / 100;
-        }
-      }
 
       return record;
     });
