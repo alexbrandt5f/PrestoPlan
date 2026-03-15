@@ -40,6 +40,7 @@ interface GanttChartAdvancedProps {
   groupedActivities: Array<{ type: 'group' | 'activity'; groupKey?: string; groupLabel?: string; activities?: Activity[]; activity?: Activity }>;
   nearCriticalThreshold: number;
   codeColors: Map<string, string>;
+  onActivitySelect?: (activity: Activity) => void;
 }
 
 const ROW_HEIGHT = 26;
@@ -61,7 +62,8 @@ export default function GanttChartAdvanced({
   scheduleVersionId,
   groupedActivities,
   nearCriticalThreshold,
-  codeColors
+  codeColors,
+  onActivitySelect
 }: GanttChartAdvancedProps) {
   const { layout, updateViewSettings } = useGanttLayout();
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -77,6 +79,7 @@ export default function GanttChartAdvanced({
   const [panStart, setPanStart] = useState({ x: 0, y: 0, scrollLeft: 0 });
   const [zoomStart, setZoomStart] = useState({ x: 0, initialZoom: 1 });
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [hasMoved, setHasMoved] = useState(false);
 
   const timescaleConfig = TIMESCALE_CONFIGS[layout.viewSettings.timescale] || TIMESCALE_CONFIGS['year-month'];
   const pixelsPerDay = timescaleConfig.pixelsPerDay * layout.viewSettings.zoom;
@@ -365,10 +368,12 @@ export default function GanttChartAdvanced({
       const zoomFactor = 1 + (deltaX / 300);
       const newZoom = Math.max(0.1, Math.min(5, zoomStart.initialZoom * zoomFactor));
       updateViewSettings({ zoom: newZoom });
+      setHasMoved(true);
       return;
     }
 
     if (isPanning) {
+      setHasMoved(true);
       const scrollContainer = scrollContainerRef.current;
       if (scrollContainer) {
         const deltaX = e.clientX - panStart.x;
@@ -435,6 +440,7 @@ export default function GanttChartAdvanced({
     if (!rect) return;
 
     const y = e.clientY - rect.top;
+    setHasMoved(false);
 
     if (y < HEADER_HEIGHT) {
       setIsZooming(true);
@@ -454,9 +460,42 @@ export default function GanttChartAdvanced({
     }
   }
 
-  function handleMouseUp() {
+  function handleMouseUp(e: React.MouseEvent) {
+    const wasPanning = isPanning;
+    const wasZooming = isZooming;
+    const didMove = hasMoved;
+
     setIsPanning(false);
     setIsZooming(false);
+    setHasMoved(false);
+
+    if (didMove) return;
+
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect || !onActivitySelect) return;
+
+    const x = e.clientX - rect.left + scrollLeft;
+    const y = e.clientY - rect.top + scrollTop;
+
+    if (y < HEADER_HEIGHT) return;
+
+    const rowIndex = Math.floor((y - HEADER_HEIGHT) / ROW_HEIGHT);
+    const visibleItem = visibleGroupedActivities[rowIndex];
+
+    if (visibleItem?.type === 'activity' && visibleItem.activity) {
+      const activity = visibleItem.activity;
+      const { startDate, finishDate } = getEffectiveDates(activity, dataDate);
+
+      if (!startDate || !finishDate) return;
+
+      const barX1 = dateToX(startDate);
+      const barX2 = dateToX(finishDate);
+      const barY = HEADER_HEIGHT + rowIndex * ROW_HEIGHT + (ROW_HEIGHT - BAR_HEIGHT) / 2;
+
+      if (x >= barX1 && x <= barX2 && y >= barY && y <= barY + BAR_HEIGHT) {
+        onActivitySelect(activity);
+      }
+    }
   }
 
   function drawTimeline(ctx: CanvasRenderingContext2D, width: number, scrollLeft: number) {

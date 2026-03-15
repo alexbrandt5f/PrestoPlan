@@ -757,6 +757,7 @@ function GanttViewerContent() {
               groupedActivities={groupedActivities}
               nearCriticalThreshold={nearCriticalThreshold}
               codeColors={codeColors}
+              onActivitySelect={handleDirectSelect}
             />
           }
           bottomPanel={
