@@ -289,7 +289,6 @@ export default function ActivityTableAdvanced({
 
   function formatValue(value: any, column: any, activity: Activity): string {
     if (value === null || value === undefined) return '-';
-    if (value === 0 && column.dataType === 'number') return '0';
 
     if (column.dataType === 'date') {
       return formatDate(value);
@@ -302,6 +301,7 @@ export default function ActivityTableAdvanced({
         return hoursToWorkingDays(value, hoursPerDay);
       }
 
+      if (value === 0) return '0';
       return value.toString();
     }
 

@@ -413,8 +413,8 @@ export default function GanttChartAdvanced({
             const content = [
               activity.activity_id_display,
               activity.activity_name,
-              `Duration: ${hoursToWorkingDays(activity.original_duration_hours, hoursPerDay)}d`,
-              `Float: ${hoursToWorkingDays(activity.total_float_hours, hoursPerDay)}d`,
+              `Duration: ${hoursToWorkingDays(activity.original_duration_hours, hoursPerDay)}`,
+              `Float: ${hoursToWorkingDays(activity.total_float_hours, hoursPerDay)}`,
               `Start: ${new Date(activity.early_start).toLocaleDateString()}`,
               `Finish: ${new Date(activity.early_finish).toLocaleDateString()}`
             ].join('\n');

@@ -565,9 +565,9 @@ export default function GanttChart({ activities, calendars, selectedActivity, da
             <div>Finish:</div>
             <div>{formatDate(tooltip.activity.early_finish)}</div>
             <div>Rem Dur:</div>
-            <div>{getWorkingDays(tooltip.activity.remaining_duration_hours, tooltip.activity.calendar_id)}d</div>
+            <div>{getWorkingDays(tooltip.activity.remaining_duration_hours, tooltip.activity.calendar_id)}</div>
             <div>Total Float:</div>
-            <div>{getWorkingDays(tooltip.activity.total_float_hours, tooltip.activity.calendar_id)}d</div>
+            <div>{getWorkingDays(tooltip.activity.total_float_hours, tooltip.activity.calendar_id)}</div>
           </div>
           {tooltip.drivingPredecessors.length > 0 && (
             <div className="mt-2 pt-2 border-t border-gray-700">
