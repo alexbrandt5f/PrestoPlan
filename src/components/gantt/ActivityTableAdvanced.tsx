@@ -336,7 +336,7 @@ export default function ActivityTableAdvanced({
 
   return (
     <div ref={containerRef} className="h-full w-full bg-white overflow-hidden flex flex-col">
-      <div className="flex-shrink-0 border-b border-gray-200 bg-gray-50 overflow-hidden">
+      <div className="flex-shrink-0 border-b border-gray-200 bg-gray-50 overflow-hidden" style={{ height: HEADER_HEIGHT, minHeight: HEADER_HEIGHT, maxHeight: HEADER_HEIGHT, boxSizing: 'border-box' }}>
         <div style={{ width: totalWidth }}>
           <div className="flex">
             {visibleColumns.map((column, index) => {
@@ -397,7 +397,7 @@ export default function ActivityTableAdvanced({
                 <div
                   key={`group-${item.groupKey}`}
                   className={`flex items-center ${bgColorClass} border-b border-gray-300 cursor-pointer ${hoverColorClass}`}
-                  style={{ height: ROW_HEIGHT }}
+                  style={{ height: ROW_HEIGHT, minHeight: ROW_HEIGHT, maxHeight: ROW_HEIGHT, boxSizing: 'border-box', overflow: 'hidden' }}
                   onClick={() => toggleGroup(item.groupKey!)}
                 >
                   <div className="flex items-center gap-2 px-3" style={{ paddingLeft: `${12 + indent}px` }}>
@@ -421,7 +421,7 @@ export default function ActivityTableAdvanced({
                 className={`flex border-b border-gray-100 cursor-pointer ${
                   isSelected ? 'bg-yellow-100' : isTraced ? 'bg-orange-50' : 'bg-white hover:bg-gray-50'
                 }`}
-                style={{ height: ROW_HEIGHT }}
+                style={{ height: ROW_HEIGHT, minHeight: ROW_HEIGHT, maxHeight: ROW_HEIGHT, boxSizing: 'border-box', overflow: 'hidden' }}
                 onMouseDown={() => onSelectActivity(activity)}
               >
                 {visibleColumns.map(column => (
