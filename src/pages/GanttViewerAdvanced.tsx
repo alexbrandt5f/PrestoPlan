@@ -57,6 +57,7 @@ function GanttViewerContent() {
   const [version, setVersion] = useState<ScheduleVersion | null>(null);
   const [project, setProject] = useState<Project | null>(null);
   const [cpmProject, setCpmProject] = useState<CpmProject | null>(null);
+  const [rootWbsName, setRootWbsName] = useState<string | null>(null);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [calendars, setCalendars] = useState<Calendar[]>([]);
   const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
@@ -85,7 +86,7 @@ function GanttViewerContent() {
       setLoading(true);
       setLoadingProgress(10);
 
-      const [projectRes, versionRes, calendarsRes, wbsRes, cpmProjectRes] = await Promise.all([
+      const [projectRes, versionRes, calendarsRes, wbsRes, cpmProjectRes, rootWbsRes] = await Promise.all([
         supabase
           .from('projects')
           .select('id, settings')
@@ -109,6 +110,12 @@ function GanttViewerContent() {
           .from('cpm_projects')
           .select('project_name')
           .eq('schedule_version_id', versionId)
+          .maybeSingle(),
+        supabase
+          .from('cpm_wbs')
+          .select('wbs_name')
+          .eq('schedule_version_id', versionId)
+          .is('parent_wbs_id', null)
           .maybeSingle()
       ]);
 
@@ -129,6 +136,7 @@ function GanttViewerContent() {
       setProject(projectRes.data);
       setVersion(versionRes.data);
       setCpmProject(cpmProjectRes.data);
+      setRootWbsName(rootWbsRes.data?.wbs_name || null);
       setCalendars(calendarsRes.data || []);
 
       if (wbsRes.data) {
@@ -623,9 +631,9 @@ function GanttViewerContent() {
                 <h1 className="text-lg font-semibold text-gray-900">
                   {version?.version_label}
                 </h1>
-                {cpmProject?.project_name && (
+                {rootWbsName && (
                   <p className="text-sm text-gray-600">
-                    {cpmProject.project_name}
+                    {rootWbsName}
                   </p>
                 )}
                 <p className="text-sm text-gray-500">
