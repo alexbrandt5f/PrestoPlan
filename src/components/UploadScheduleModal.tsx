@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X, Upload, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 import { uploadScheduleFile, ParseProgress } from '../lib/storage';
 import { useToast } from '../contexts/ToastContext';
+import { ParseProgressDisplay } from './ParseProgressDisplay';
 
 interface FileUpload {
   id: string;
@@ -238,34 +239,13 @@ export function UploadScheduleModal({
                     )}
                   </div>
 
-                  {fileUpload.status === 'uploading' && (
-                    <div className="space-y-1">
-                      <div className="w-full bg-gray-200 rounded-full h-2">
-                        <div
-                          className="bg-[#2E86C1] h-2 rounded-full transition-all duration-300"
-                          style={{ width: `${fileUpload.progress}%` }}
-                        />
-                      </div>
-                      <p className="text-xs text-gray-500 text-right">{fileUpload.progress}%</p>
-                    </div>
-                  )}
-                  {fileUpload.status === 'parsing' && (
-                    <div className="space-y-1">
-                      <div className="w-full bg-gray-200 rounded-full h-2">
-                        <div
-                          className="bg-[#2E86C1] h-2 rounded-full transition-all duration-300"
-                          style={{ width: `${fileUpload.parseProgress?.percent || 0}%` }}
-                        />
-                      </div>
-                      {fileUpload.parseProgress && (
-                        <div className="flex items-center justify-between text-xs text-gray-600">
-                          <span className="font-medium">{fileUpload.parseProgress.stage}</span>
-                          <span>
-                            {fileUpload.parseProgress.current.toLocaleString()}/{fileUpload.parseProgress.total.toLocaleString()} ({fileUpload.parseProgress.percent}%)
-                          </span>
-                        </div>
-                      )}
-                    </div>
+                  {(fileUpload.status === 'uploading' || fileUpload.status === 'parsing') && (
+                    <ParseProgressDisplay
+                      uploadProgress={fileUpload.progress}
+                      parseProgress={fileUpload.parseProgress}
+                      isUploading={fileUpload.status === 'uploading'}
+                      isParsing={fileUpload.status === 'parsing'}
+                    />
                   )}
                 </div>
               ))}
