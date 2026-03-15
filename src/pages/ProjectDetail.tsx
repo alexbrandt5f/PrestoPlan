@@ -447,11 +447,13 @@ export function ProjectDetail() {
       {isUploadModalOpen && company && projectId && (
         <UploadScheduleModal
           isOpen={isUploadModalOpen}
-          onClose={() => setIsUploadModalOpen(false)}
+          onClose={() => {
+            setIsUploadModalOpen(false);
+            refresh();
+          }}
           projectId={projectId}
           companyId={company.id}
           onUploadComplete={() => {
-            setIsUploadModalOpen(false);
             refresh();
           }}
         />
