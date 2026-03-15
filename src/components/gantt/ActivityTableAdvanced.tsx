@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useMemo } from 'react';
+import { useRef, useEffect, useState, useMemo, useCallback } from 'react';
 import { ChevronUp, ChevronDown, ChevronRight } from 'lucide-react';
 import { useGanttLayout } from '../../contexts/GanttLayoutContext';
 import { hoursToWorkingDays, hoursToDays, formatDate } from '../../lib/dateUtils';
@@ -46,6 +46,8 @@ export default function ActivityTableAdvanced({
   const [resizeStartX, setResizeStartX] = useState(0);
   const [resizeStartWidth, setResizeStartWidth] = useState(0);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const lastClickTimeRef = useRef<number>(0);
+  const clickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const calendarMap = useMemo(() => {
     const map = new Map<string, Calendar>();
@@ -318,6 +320,35 @@ export default function ActivityTableAdvanced({
     return String(value);
   }
 
+  const handleActivityClick = useCallback((activity: Activity) => {
+    const now = Date.now();
+    if (now - lastClickTimeRef.current < 100) {
+      return;
+    }
+    lastClickTimeRef.current = now;
+
+    if (clickTimeoutRef.current) {
+      clearTimeout(clickTimeoutRef.current);
+    }
+
+    clickTimeoutRef.current = setTimeout(() => {
+      try {
+        onSelectActivity(activity);
+      } catch (error) {
+        console.error('Error selecting activity:', error);
+      }
+      clickTimeoutRef.current = null;
+    }, 50);
+  }, [onSelectActivity]);
+
+  useEffect(() => {
+    return () => {
+      if (clickTimeoutRef.current) {
+        clearTimeout(clickTimeoutRef.current);
+      }
+    };
+  }, []);
+
   function toggleGroup(groupKey: string) {
     const newCollapsed = new Set(collapsedGroups);
     if (newCollapsed.has(groupKey)) {
@@ -426,7 +457,7 @@ export default function ActivityTableAdvanced({
                   isSelected ? 'bg-yellow-100' : isTraced ? 'bg-orange-50' : 'bg-white hover:bg-gray-50'
                 }`}
                 style={{ height: ROW_HEIGHT, minHeight: ROW_HEIGHT, maxHeight: ROW_HEIGHT, boxSizing: 'border-box', overflow: 'hidden' }}
-                onMouseDown={() => onSelectActivity(activity)}
+                onClick={() => handleActivityClick(activity)}
               >
                 {visibleColumns.map(column => {
                   const isNumericColumn = column.dataType === 'number' || column.dataType === 'duration';

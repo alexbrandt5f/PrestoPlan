@@ -72,6 +72,14 @@ function GanttViewerContent() {
   const [backgroundLoading, setBackgroundLoading] = useState(false);
 
   const loadedVersionRef = useRef<string | null>(null);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!user || !projectId || !versionId) return;
@@ -90,6 +98,8 @@ function GanttViewerContent() {
   }, [layout.viewSettings.colorByCodeTypeId, activities, codeAssignments]);
 
   async function loadData() {
+    if (!mountedRef.current) return;
+
     try {
       setLoading(true);
       setLoadingProgress(5);
@@ -123,6 +133,8 @@ function GanttViewerContent() {
           .maybeSingle()
       ]);
 
+      if (!mountedRef.current) return;
+
       setLoadingProgress(10);
 
       if (projectRes.error) throw projectRes.error;
@@ -131,10 +143,15 @@ function GanttViewerContent() {
       if (cpmProjectRes.error) console.warn('CPM project query failed:', cpmProjectRes.error);
 
       if (!versionRes.data) {
-        showToast('Schedule version not found', 'error');
-        navigate(`/project/${projectId}`);
+        if (mountedRef.current) {
+          showToast('Schedule version not found', 'error');
+          setLoading(false);
+          navigate(`/project/${projectId}`);
+        }
         return;
       }
+
+      if (!mountedRef.current) return;
 
       setProject(projectRes.data);
       setVersion(versionRes.data);
@@ -147,6 +164,8 @@ function GanttViewerContent() {
 
       // Load ALL WBS nodes with pagination
       const allWbs = await fetchAllWbs();
+      if (!mountedRef.current) return;
+
       const wbsMapLocal = new Map();
       allWbs.forEach(wbs => wbsMapLocal.set(wbs.id, wbs));
       setWbsMap(wbsMapLocal);
@@ -157,6 +176,17 @@ function GanttViewerContent() {
 
       // Load ALL activities with pagination and progress updates
       const allActivities = await fetchAllActivities();
+      if (!mountedRef.current) return;
+
+      if (!allActivities || allActivities.length === 0) {
+        console.warn('No activities loaded for schedule');
+        if (mountedRef.current) {
+          showToast('No activities found in schedule', 'warning');
+          setLoading(false);
+        }
+        return;
+      }
+
       setActivities(allActivities);
       console.log('DEBUG: activities loaded:', allActivities.length);
 
@@ -164,21 +194,36 @@ function GanttViewerContent() {
       setLoadingMessage('Loading activity codes...');
 
       // Load code assignments for all activities
-      await loadCodeAssignmentsForActivities(allActivities);
+      try {
+        await loadCodeAssignmentsForActivities(allActivities);
+        if (!mountedRef.current) return;
+      } catch (error) {
+        console.warn('Error loading code assignments:', error);
+      }
 
       setLoadingProgress(80);
       setLoadingMessage('Loading custom fields...');
 
       // Load custom field values for all activities
-      await loadCustomFieldValuesForActivities(allActivities);
+      try {
+        await loadCustomFieldValuesForActivities(allActivities);
+        if (!mountedRef.current) return;
+      } catch (error) {
+        console.warn('Error loading custom fields:', error);
+      }
+
+      if (!mountedRef.current) return;
 
       setLoadingProgress(100);
       setLoadingMessage('Complete');
       setLoading(false);
     } catch (error) {
       console.error('Error loading Gantt data:', error);
-      showToast('Failed to load schedule data', 'error');
-      setLoading(false);
+      if (mountedRef.current) {
+        showToast('Failed to load schedule data. Please try again.', 'error');
+        setLoading(false);
+        loadedVersionRef.current = null;
+      }
     }
   }
 
@@ -219,7 +264,7 @@ function GanttViewerContent() {
     let offset = 0;
     let hasMore = true;
 
-    while (hasMore) {
+    while (hasMore && mountedRef.current) {
       const { data, error } = await supabase
         .from('cpm_activities')
         .select('*')
@@ -230,14 +275,15 @@ function GanttViewerContent() {
       if (error) throw error;
 
       if (data && data.length > 0) {
-        allActivities = [...allActivities, ...data];
+        allActivities.push(...data);
         offset += PAGE_SIZE;
         hasMore = data.length === PAGE_SIZE;
 
-        // Update progress
-        const progress = 25 + Math.min(35, (allActivities.length / 10000) * 35);
-        setLoadingProgress(progress);
-        setLoadingMessage(`Loading activities... (${allActivities.length.toLocaleString()})`);
+        if (mountedRef.current) {
+          const progress = 25 + Math.min(35, (allActivities.length / 10000) * 35);
+          setLoadingProgress(progress);
+          setLoadingMessage(`Loading activities... (${allActivities.length.toLocaleString()})`);
+        }
       } else {
         hasMore = false;
       }
