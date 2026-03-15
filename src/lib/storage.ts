@@ -117,6 +117,44 @@ export async function uploadScheduleFile({
           }
         }, onStructuredProgress);
 
+        // ============================================================
+        // After all XER table inserts are complete, call the server-side
+        // calendar decoder and relationship free float calculator.
+        // This decodes the P6 clndr_data strings, expands the calendar
+        // lookup table, and calculates working-day relationship free float.
+        // ============================================================
+        try {
+          console.log('[XER Parser] Calling server-side calendar decode and float calculation...');
+          onStatusChange?.('parsing', 'Decoding calendars and calculating relationship floats...');
+
+          const { data: decodeResult, error: decodeError } = await supabase.rpc(
+            'decode_calendars_and_calc_floats',
+            { p_schedule_version_id: versionId }
+          );
+
+          if (decodeError) {
+            console.error('[XER Parser] Calendar decode RPC error:', decodeError);
+            // Don't fail the entire parse — the raw data is already saved.
+            // Log the error but still mark parse as complete.
+          } else {
+            console.log('[XER Parser] Calendar decode results:', decodeResult);
+
+            // Check if the function itself reported an error
+            if (decodeResult?.status === 'error') {
+              console.error('[XER Parser] Calendar decode internal error:', decodeResult.error_message);
+            } else {
+              console.log(
+                `[XER Parser] Decoded ${decodeResult?.calendars_decoded} calendars, ` +
+                `expanded ${decodeResult?.calendar_date_rows} date rows, ` +
+                `processed ${decodeResult?.relationships_processed} relationships`
+              );
+            }
+          }
+        } catch (err) {
+          console.error('[XER Parser] Unexpected error calling calendar decode:', err);
+          // Non-fatal — raw data is already persisted
+        }
+
         console.log('[Upload] Updating parse status to "complete"...');
         await supabase
           .from('schedule_versions')
