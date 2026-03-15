@@ -125,16 +125,79 @@ async function transformRelationshipsInWorker(
   });
 }
 
+
+// Structured progress reporting for the import process.
+// Each stage has a key, label, total count, and current progress.
+export interface ImportStageProgress {
+  key: string;
+  label: string;
+  total: number;
+  current: number;
+  status: 'pending' | 'active' | 'complete';
+}
+
+export interface ImportProgressReport {
+  stages: ImportStageProgress[];
+}
+
 export async function processXERTables(
   supabase: any,
   tables: XERTable[],
   versionId: string,
   companyId: string,
-  onProgress?: (message: string) => void
+  onProgress?: (message: string) => void,
+  onStructuredProgress?: (report: ImportProgressReport) => void
 ) {
   const tableMap = new Map<string, XERTable>();
   tables.forEach(table => tableMap.set(table.name, table));
 
+  // ============================================================
+  // STEP 0: Count everything upfront so all progress bars show immediately
+  // ============================================================
+  const calendarTable = tableMap.get('CALENDAR');
+  const wbsTable = tableMap.get('PROJWBS');
+  const taskTable = tableMap.get('TASK');
+  const taskPredTable = tableMap.get('TASKPRED');
+  const actvTypeTable = tableMap.get('ACTVTYPE');
+  const actvCodeTable = tableMap.get('ACTVCODE');
+  const taskActvTable = tableMap.get('TASKACTV');
+  const rsrcTable = tableMap.get('RSRC');
+  const taskRsrcTable = tableMap.get('TASKRSRC');
+  const udfTypeTable = tableMap.get('UDFTYPE');
+  const udfValueTable = tableMap.get('UDFVALUE');
+  const memoTypeTable = tableMap.get('MEMOTYPE');
+  const taskMemoTable = tableMap.get('TASKMEMO');
+  const projectTable = tableMap.get('PROJECT');
+
+  const stages: ImportStageProgress[] = [
+    { key: 'calendars', label: 'Calendars', total: calendarTable?.rows.length || 0, current: 0, status: 'pending' },
+    { key: 'wbs', label: 'WBS Structure', total: wbsTable?.rows.length || 0, current: 0, status: 'pending' },
+    { key: 'activities', label: 'Activities', total: taskTable?.rows.length || 0, current: 0, status: 'pending' },
+    { key: 'relationships', label: 'Relationships', total: taskPredTable?.rows.length || 0, current: 0, status: 'pending' },
+    { key: 'codeTypes', label: 'Code Types & Values', total: (actvTypeTable?.rows.length || 0) + (actvCodeTable?.rows.length || 0), current: 0, status: 'pending' },
+    { key: 'codeAssignments', label: 'Code Assignments', total: taskActvTable?.rows.length || 0, current: 0, status: 'pending' },
+    { key: 'resources', label: 'Resources & Assignments', total: (rsrcTable?.rows.length || 0) + (taskRsrcTable?.rows.length || 0), current: 0, status: 'pending' },
+    { key: 'customFields', label: 'Custom Fields', total: (udfTypeTable?.rows.length || 0) + (udfValueTable?.rows.length || 0), current: 0, status: 'pending' },
+    { key: 'notes', label: 'Activity Notes', total: (memoTypeTable?.rows.length || 0) + (taskMemoTable?.rows.length || 0), current: 0, status: 'pending' },
+    { key: 'driving', label: 'Driving Path Analysis', total: taskPredTable?.rows.length || 0, current: 0, status: 'pending' },
+  ];
+
+  const activeStages = stages.filter(s => s.total > 0);
+
+  function updateStage(key: string, updates: Partial<ImportStageProgress>) {
+    const stage = activeStages.find(s => s.key === key);
+    if (stage) {
+      Object.assign(stage, updates);
+      onStructuredProgress?.({ stages: [...activeStages] });
+    }
+  }
+
+  // Emit initial state with all totals known
+  onStructuredProgress?.({ stages: [...activeStages] });
+
+  // ============================================================
+  // Project metadata
+  // ============================================================
   let p6Version = '';
   let dataDate: string | null = null;
 
@@ -146,7 +209,6 @@ export async function processXERTables(
     }
   }
 
-  const projectTable = tableMap.get('PROJECT');
   if (projectTable) {
     const dataDateField = projectTable.fields.findIndex(f =>
       f.toLowerCase().includes('last_recalc_date') || f.toLowerCase().includes('data_date')
@@ -159,284 +221,204 @@ export async function processXERTables(
   if (p6Version || dataDate) {
     await supabase
       .from('schedule_versions')
-      .update({
-        source_tool_version: p6Version || null,
-        data_date: dataDate,
-      })
+      .update({ source_tool_version: p6Version || null, data_date: dataDate })
       .eq('id', versionId);
   }
 
   // ============================================================
-  // PHASE 1: No dependencies — run PROJECT, CALENDAR, WBS in parallel
-  // These tables don't reference each other, so they can all insert simultaneously.
+  // PHASE 1: PROJECT + CALENDAR + WBS in parallel
   // ============================================================
-  onProgress?.('Phase 1: Saving project, calendars, and WBS structure...');
-
   const calendarIdMap = new Map<string, string>();
   const wbsIdMap = new Map<string, string>();
-
-  const phase1Promises: Promise<void>[] = [];
+  const phase1: Promise<void>[] = [];
 
   if (projectTable) {
-    phase1Promises.push(
-      processPROJECT(supabase, projectTable, versionId, companyId)
-    );
+    phase1.push(processPROJECT(supabase, projectTable, versionId, companyId));
   }
-
-  const calendarTable = tableMap.get('CALENDAR');
   if (calendarTable) {
-    phase1Promises.push(
-      (async () => {
-        const totalCalendars = calendarTable.rows.length;
-        onProgress?.(`Saving calendars (0/${totalCalendars})...`);
-        const newIds = await processCALENDAR(supabase, calendarTable, versionId, companyId, (saved: number) => {
-          onProgress?.(`Saving calendars (${saved}/${totalCalendars})...`);
-        });
-        newIds.forEach((newId, oldId) => calendarIdMap.set(oldId, newId));
-      })()
-    );
+    phase1.push((async () => {
+      updateStage('calendars', { status: 'active' });
+      const ids = await processCALENDAR(supabase, calendarTable, versionId, companyId, (n) => {
+        updateStage('calendars', { current: n });
+        onProgress?.(`Saving calendars (${n}/${calendarTable.rows.length})...`);
+      });
+      ids.forEach((v, k) => calendarIdMap.set(k, v));
+      updateStage('calendars', { status: 'complete', current: calendarTable.rows.length });
+    })());
   }
-
-  const wbsTable = tableMap.get('PROJWBS');
   if (wbsTable) {
-    phase1Promises.push(
-      (async () => {
-        const totalWBS = wbsTable.rows.length;
-        onProgress?.(`Saving WBS structure (0/${totalWBS})...`);
-        const newIds = await processPROJWBS(supabase, wbsTable, versionId, companyId, (saved: number) => {
-          onProgress?.(`Saving WBS structure (${saved}/${totalWBS})...`);
-        });
-        newIds.forEach((newId, oldId) => wbsIdMap.set(oldId, newId));
-      })()
-    );
+    phase1.push((async () => {
+      updateStage('wbs', { status: 'active' });
+      const ids = await processPROJWBS(supabase, wbsTable, versionId, companyId, (n) => {
+        updateStage('wbs', { current: n });
+        onProgress?.(`Saving WBS (${n}/${wbsTable.rows.length})...`);
+      });
+      ids.forEach((v, k) => wbsIdMap.set(k, v));
+      updateStage('wbs', { status: 'complete', current: wbsTable.rows.length });
+    })());
   }
-
-  await Promise.all(phase1Promises);
+  await Promise.all(phase1);
 
   // ============================================================
-  // PHASE 2: Transform and save activities (needs WBS + Calendar ID maps)
-  // Activities must complete before anything that references activity IDs.
+  // PHASE 2: Activities (needs WBS + Calendar IDs)
   // ============================================================
-  const taskTable = tableMap.get('TASK');
   const activityIdMap = new Map<string, string>();
   if (taskTable) {
-    const totalActivities = taskTable.rows.length;
-
-    onProgress?.(`Transforming activities (0/${totalActivities})...`);
-    const { records, idMap } = await transformTasksInWorker(
-      taskTable,
-      versionId,
-      companyId,
-      wbsIdMap,
-      calendarIdMap
-    );
-
-    onProgress?.(`Saving activities (0/${totalActivities})...`);
-    await batchInsert(supabase, 'cpm_activities', records, (saved: number) => {
-      onProgress?.(`Saving activities (${saved}/${totalActivities})...`);
+    updateStage('activities', { status: 'active' });
+    const { records, idMap } = await transformTasksInWorker(taskTable, versionId, companyId, wbsIdMap, calendarIdMap);
+    await batchInsert(supabase, 'cpm_activities', records, (n) => {
+      updateStage('activities', { current: n });
+      onProgress?.(`Saving activities (${n}/${taskTable.rows.length})...`);
     });
-
-    idMap.forEach((newId, oldId) => activityIdMap.set(oldId, newId));
+    idMap.forEach((v, k) => activityIdMap.set(k, v));
+    updateStage('activities', { status: 'complete', current: taskTable.rows.length });
   }
 
   // ============================================================
-  // PHASE 3: Process tables that need activity IDs but NOT each other's IDs.
-  // These can all run in parallel:
-  //   - TASKPRED (relationships) — needs activityIdMap
-  //   - ACTVTYPE (code types) — no activity dependency, but needed by ACTVCODE
-  //   - RSRC (resources) — no activity dependency, but needed by TASKRSRC
-  //   - UDFTYPE (custom field types) — no activity dependency, but needed by UDFVALUE
-  //   - MEMOTYPE (note topics) — no activity dependency, but needed by TASKMEMO
+  // PHASE 3: Tables needing activity IDs but not each other
   // ============================================================
-  onProgress?.('Phase 3: Saving relationships, codes, resources, custom fields...');
-
   const codeTypeIdMap = new Map<string, string>();
+  const codeValueIdMap = new Map<string, string>();
   const resourceIdMap = new Map<string, string>();
   const fieldTypeIdMap = new Map<string, string>();
   const topicIdMap = new Map<string, string>();
+  const phase3: Promise<void>[] = [];
 
-  const phase3Promises: Promise<void>[] = [];
-
-  // Relationships
-  const taskPredTable = tableMap.get('TASKPRED');
   if (taskPredTable) {
-    phase3Promises.push(
-      (async () => {
-        const totalRels = taskPredTable.rows.length;
-        onProgress?.(`Transforming relationships (0/${totalRels})...`);
-        const { records } = await transformRelationshipsInWorker(
-          taskPredTable,
-          versionId,
-          companyId,
-          activityIdMap
-        );
-        onProgress?.(`Saving relationships (0/${totalRels})...`);
-        await batchInsert(supabase, 'cpm_relationships', records, (saved: number) => {
-          onProgress?.(`Saving relationships (${saved}/${totalRels})...`);
-        });
-      })()
-    );
+    phase3.push((async () => {
+      updateStage('relationships', { status: 'active' });
+      const { records } = await transformRelationshipsInWorker(taskPredTable, versionId, companyId, activityIdMap);
+      await batchInsert(supabase, 'cpm_relationships', records, (n) => {
+        updateStage('relationships', { current: n });
+        onProgress?.(`Saving relationships (${n}/${taskPredTable.rows.length})...`);
+      });
+      updateStage('relationships', { status: 'complete', current: taskPredTable.rows.length });
+    })());
   }
 
-  // Code types
-  const actvTypeTable = tableMap.get('ACTVTYPE');
-  if (actvTypeTable) {
-    phase3Promises.push(
-      (async () => {
-        const totalTypes = actvTypeTable.rows.length;
-        onProgress?.(`Saving code types (0/${totalTypes})...`);
-        const newIds = await processACTVTYPE(supabase, actvTypeTable, versionId, companyId, (saved: number) => {
-          onProgress?.(`Saving code types (${saved}/${totalTypes})...`);
+  if (actvTypeTable || actvCodeTable) {
+    phase3.push((async () => {
+      updateStage('codeTypes', { status: 'active' });
+      let processed = 0;
+      if (actvTypeTable) {
+        const ids = await processACTVTYPE(supabase, actvTypeTable, versionId, companyId, (n) => {
+          processed = n;
+          updateStage('codeTypes', { current: n });
         });
-        newIds.forEach((newId, oldId) => codeTypeIdMap.set(oldId, newId));
-      })()
-    );
+        ids.forEach((v, k) => codeTypeIdMap.set(k, v));
+        processed = actvTypeTable.rows.length;
+      }
+      if (actvCodeTable) {
+        const ids = await processACTVCODE(supabase, actvCodeTable, versionId, companyId, codeTypeIdMap, (n) => {
+          updateStage('codeTypes', { current: processed + n });
+        });
+        ids.forEach((v, k) => codeValueIdMap.set(k, v));
+      }
+      const total = (actvTypeTable?.rows.length || 0) + (actvCodeTable?.rows.length || 0);
+      updateStage('codeTypes', { status: 'complete', current: total });
+    })());
   }
 
-  // Resources
-  const rsrcTable = tableMap.get('RSRC');
   if (rsrcTable) {
-    phase3Promises.push(
-      (async () => {
-        const totalResources = rsrcTable.rows.length;
-        onProgress?.(`Saving resources (0/${totalResources})...`);
-        const newIds = await processRSRC(supabase, rsrcTable, versionId, companyId, (saved: number) => {
-          onProgress?.(`Saving resources (${saved}/${totalResources})...`);
-        });
-        newIds.forEach((newId, oldId) => resourceIdMap.set(oldId, newId));
-      })()
-    );
+    phase3.push((async () => {
+      updateStage('resources', { status: 'active' });
+      const ids = await processRSRC(supabase, rsrcTable, versionId, companyId, (n) => {
+        updateStage('resources', { current: n });
+      });
+      ids.forEach((v, k) => resourceIdMap.set(k, v));
+      updateStage('resources', { current: rsrcTable.rows.length });
+    })());
   }
 
-  // Custom field types
-  const udfTypeTable = tableMap.get('UDFTYPE');
   if (udfTypeTable) {
-    phase3Promises.push(
-      (async () => {
-        const totalFieldTypes = udfTypeTable.rows.length;
-        onProgress?.(`Saving custom field types (0/${totalFieldTypes})...`);
-        const newIds = await processUDFTYPE(supabase, udfTypeTable, versionId, companyId, (saved: number) => {
-          onProgress?.(`Saving custom field types (${saved}/${totalFieldTypes})...`);
-        });
-        newIds.forEach((newId, oldId) => fieldTypeIdMap.set(oldId, newId));
-      })()
-    );
+    phase3.push((async () => {
+      updateStage('customFields', { status: 'active' });
+      const ids = await processUDFTYPE(supabase, udfTypeTable, versionId, companyId, (n) => {
+        updateStage('customFields', { current: n });
+      });
+      ids.forEach((v, k) => fieldTypeIdMap.set(k, v));
+      updateStage('customFields', { current: udfTypeTable.rows.length });
+    })());
   }
 
-  // Note topics
-  const memoTypeTable = tableMap.get('MEMOTYPE');
   if (memoTypeTable) {
-    phase3Promises.push(
-      (async () => {
-        const totalTopics = memoTypeTable.rows.length;
-        onProgress?.(`Saving note topics (0/${totalTopics})...`);
-        const newIds = await processMEMOTYPE(supabase, memoTypeTable, versionId, companyId, (saved: number) => {
-          onProgress?.(`Saving note topics (${saved}/${totalTopics})...`);
-        });
-        newIds.forEach((newId, oldId) => topicIdMap.set(oldId, newId));
-      })()
-    );
+    phase3.push((async () => {
+      updateStage('notes', { status: 'active' });
+      const ids = await processMEMOTYPE(supabase, memoTypeTable, versionId, companyId, (n) => {
+        updateStage('notes', { current: n });
+      });
+      ids.forEach((v, k) => topicIdMap.set(k, v));
+      updateStage('notes', { current: memoTypeTable.rows.length });
+    })());
   }
 
-  await Promise.all(phase3Promises);
+  await Promise.all(phase3);
 
   // ============================================================
-  // PHASE 4: Process tables that need Phase 3 ID maps.
-  // These can all run in parallel with each other:
-  //   - ACTVCODE (needs codeTypeIdMap) → then TASKACTV (needs codeValueIdMap + activityIdMap)
-  //   - TASKRSRC (needs resourceIdMap + activityIdMap)
-  //   - UDFVALUE (needs fieldTypeIdMap + activityIdMap)
-  //   - TASKMEMO (needs topicIdMap + activityIdMap)
-  //   - Driving relationship analysis (needs relationship data from Phase 3)
-  // Note: ACTVCODE → TASKACTV is a two-step chain, so we handle it as one async block.
+  // PHASE 4: Assignment tables + driving analysis
   // ============================================================
-  onProgress?.('Phase 4: Saving assignments and analyzing driving paths...');
+  const phase4: Promise<void>[] = [];
 
-  const phase4Promises: Promise<void>[] = [];
-
-  // Code values → Code assignments (chained: ACTVCODE then TASKACTV)
-  const actvCodeTable = tableMap.get('ACTVCODE');
-  const taskActvTable = tableMap.get('TASKACTV');
-  if (actvCodeTable || taskActvTable) {
-    phase4Promises.push(
-      (async () => {
-        const codeValueIdMap = new Map<string, string>();
-        if (actvCodeTable) {
-          const totalCodes = actvCodeTable.rows.length;
-          onProgress?.(`Saving code values (0/${totalCodes})...`);
-          const newIds = await processACTVCODE(supabase, actvCodeTable, versionId, companyId, codeTypeIdMap, (saved: number) => {
-            onProgress?.(`Saving code values (${saved}/${totalCodes})...`);
-          });
-          newIds.forEach((newId, oldId) => codeValueIdMap.set(oldId, newId));
-        }
-        if (taskActvTable) {
-          const totalAssignments = taskActvTable.rows.length;
-          onProgress?.(`Saving code assignments (0/${totalAssignments})...`);
-          await processTASKACTV(supabase, taskActvTable, versionId, companyId, activityIdMap, codeValueIdMap, (saved: number) => {
-            onProgress?.(`Saving code assignments (${saved}/${totalAssignments})...`);
-          });
-        }
-      })()
-    );
+  if (taskActvTable) {
+    phase4.push((async () => {
+      updateStage('codeAssignments', { status: 'active' });
+      await processTASKACTV(supabase, taskActvTable, versionId, companyId, activityIdMap, codeValueIdMap, (n) => {
+        updateStage('codeAssignments', { current: n });
+      });
+      updateStage('codeAssignments', { status: 'complete', current: taskActvTable.rows.length });
+    })());
   }
 
-  // Resource assignments
-  const taskRsrcTable = tableMap.get('TASKRSRC');
   if (taskRsrcTable) {
-    phase4Promises.push(
-      (async () => {
-        const totalRsrcAssignments = taskRsrcTable.rows.length;
-        onProgress?.(`Saving resource assignments (0/${totalRsrcAssignments})...`);
-        await processTASKRSRC(supabase, taskRsrcTable, versionId, companyId, activityIdMap, resourceIdMap, (saved: number) => {
-          onProgress?.(`Saving resource assignments (${saved}/${totalRsrcAssignments})...`);
-        });
-      })()
-    );
+    phase4.push((async () => {
+      const offset = rsrcTable?.rows.length || 0;
+      await processTASKRSRC(supabase, taskRsrcTable, versionId, companyId, activityIdMap, resourceIdMap, (n) => {
+        updateStage('resources', { current: offset + n });
+      });
+      updateStage('resources', { status: 'complete', current: offset + taskRsrcTable.rows.length });
+    })());
+  } else if (rsrcTable) {
+    updateStage('resources', { status: 'complete' });
   }
 
-  // Custom field values
-  const udfValueTable = tableMap.get('UDFVALUE');
   if (udfValueTable) {
-    phase4Promises.push(
-      (async () => {
-        const totalFieldValues = udfValueTable.rows.length;
-        onProgress?.(`Saving custom field values (0/${totalFieldValues})...`);
-        await processUDFVALUE(supabase, udfValueTable, versionId, companyId, activityIdMap, fieldTypeIdMap, (saved: number) => {
-          onProgress?.(`Saving custom field values (${saved}/${totalFieldValues})...`);
-        });
-      })()
-    );
+    phase4.push((async () => {
+      const offset = udfTypeTable?.rows.length || 0;
+      await processUDFVALUE(supabase, udfValueTable, versionId, companyId, activityIdMap, fieldTypeIdMap, (n) => {
+        updateStage('customFields', { current: offset + n });
+      });
+      updateStage('customFields', { status: 'complete', current: offset + udfValueTable.rows.length });
+    })());
+  } else if (udfTypeTable) {
+    updateStage('customFields', { status: 'complete' });
   }
 
-  // Activity notes
-  const taskMemoTable = tableMap.get('TASKMEMO');
   if (taskMemoTable) {
-    phase4Promises.push(
-      (async () => {
-        const totalNotes = taskMemoTable.rows.length;
-        onProgress?.(`Saving activity notes (0/${totalNotes})...`);
-        await processTASKMEMO(supabase, taskMemoTable, versionId, companyId, activityIdMap, topicIdMap, (saved: number) => {
-          onProgress?.(`Saving activity notes (${saved}/${totalNotes})...`);
-        });
-      })()
-    );
+    phase4.push((async () => {
+      const offset = memoTypeTable?.rows.length || 0;
+      await processTASKMEMO(supabase, taskMemoTable, versionId, companyId, activityIdMap, topicIdMap, (n) => {
+        updateStage('notes', { current: offset + n });
+      });
+      updateStage('notes', { status: 'complete', current: offset + taskMemoTable.rows.length });
+    })());
+  } else if (memoTypeTable) {
+    updateStage('notes', { status: 'complete' });
   }
 
-  // Driving relationship analysis
   if (taskPredTable) {
-    phase4Promises.push(
-      (async () => {
-        await updateDrivingRelationships(supabase, versionId, (processed: number, total: number) => {
-          onProgress?.(`Analyzing driving paths (${processed}/${total})...`);
-        });
-      })()
-    );
+    phase4.push((async () => {
+      updateStage('driving', { status: 'active' });
+      await updateDrivingRelationships(supabase, versionId, (processed, total) => {
+        updateStage('driving', { current: processed, total: total > 0 ? total : taskPredTable.rows.length });
+      });
+      updateStage('driving', { status: 'complete', current: taskPredTable.rows.length });
+    })());
   }
 
-  await Promise.all(phase4Promises);
+  await Promise.all(phase4);
 
   // ============================================================
-  // PHASE 5: Store any unrecognized tables as raw data
+  // PHASE 5: Raw tables
   // ============================================================
   const knownTables = [
     'ERMHDR', 'PROJECT', 'PROJWBS', 'TASK', 'TASKPRED', 'CALENDAR',
@@ -536,8 +518,25 @@ async function processPROJWBS(
 ): Promise<Map<string, string>> {
   const idMap = new Map<string, string>();
 
+  // First pass: create UUIDs for all WBS nodes so we can resolve parent references
+  const wbsIdIndex = table.fields.indexOf('wbs_id');
+  const parentIdIndex = table.fields.indexOf('parent_wbs_id');
+
+  table.rows.forEach(row => {
+    if (wbsIdIndex >= 0) {
+      const originalId = row[wbsIdIndex];
+      if (originalId) {
+        idMap.set(originalId, crypto.randomUUID());
+      }
+    }
+  });
+
+  // Second pass: build records with parent_wbs_id already resolved
+  // This avoids the slow individual UPDATE calls after insert
   const records = table.rows.map(row => {
-    const newId = crypto.randomUUID();
+    const originalWbsId = wbsIdIndex >= 0 ? row[wbsIdIndex] : null;
+    const newId = originalWbsId ? idMap.get(originalWbsId)! : crypto.randomUUID();
+
     const record: any = {
       id: newId,
       schedule_version_id: versionId,
@@ -551,35 +550,45 @@ async function processPROJWBS(
 
       if (field === 'wbs_id') {
         record.original_wbs_id = value;
-        idMap.set(value, newId);
       } else if (field === 'wbs_short_name' || field === 'wbs_name') {
         record.wbs_name = value;
+      } else if (field === 'wbs_code') {
+        record.wbs_code = value;
       } else if (field === 'seq_num') {
         record.sort_order = parseInt(value) || 0;
+      } else if (field === 'parent_wbs_id' && value) {
+        // Resolve parent reference using the ID map from first pass
+        record.parent_wbs_id = idMap.get(value) || null;
       }
     });
 
     return record;
   });
 
-  await batchInsert(supabase, 'cpm_wbs', records, onProgress);
+  // Compute WBS levels from parent-child hierarchy
+  // Build a lookup map and walk from roots to compute levels
+  const recordMap = new Map<string, any>();
+  records.forEach(r => recordMap.set(r.id, r));
 
-  for (const row of table.rows) {
-    const wbsIdIndex = table.fields.indexOf('wbs_id');
-    const parentIdIndex = table.fields.indexOf('parent_wbs_id');
-
-    if (wbsIdIndex >= 0 && parentIdIndex >= 0) {
-      const wbsId = row[wbsIdIndex];
-      const parentId = row[parentIdIndex];
-
-      if (parentId && idMap.has(parentId) && idMap.has(wbsId)) {
-        await supabase
-          .from('cpm_wbs')
-          .update({ parent_wbs_id: idMap.get(parentId) })
-          .eq('id', idMap.get(wbsId));
+  function setLevel(record: any, level: number) {
+    record.level = level;
+    // Find children of this record
+    records.forEach(r => {
+      if (r.parent_wbs_id === record.id) {
+        setLevel(r, level + 1);
       }
-    }
+    });
   }
+
+  // Start from root nodes (no parent)
+  records.forEach(r => {
+    if (!r.parent_wbs_id) {
+      setLevel(r, 0);
+    }
+  });
+
+  // Single batch insert with parent_wbs_id and level already set
+  await batchInsert(supabase, 'cpm_wbs', records, onProgress);
 
   return idMap;
 }
