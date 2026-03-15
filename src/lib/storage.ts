@@ -1,5 +1,7 @@
 import { supabase } from './supabase';
-import { parseXER, processXERTables } from './xerParser';
+import { parseXER, processXERTables, ImportProgressReport } from './xerParser';
+
+export type { ImportProgressReport, ImportStageProgress } from './xerParser';
 
 export interface ParseProgress {
   stage: string;
@@ -16,6 +18,7 @@ interface UploadScheduleFileParams {
   onProgress?: (progress: number) => void;
   onStatusChange?: (status: 'uploading' | 'parsing' | 'complete' | 'error', message?: string) => void;
   onParseProgress?: (progress: ParseProgress) => void;
+  onStructuredProgress?: (report: ImportProgressReport) => void;
 }
 
 interface UploadScheduleFileResult {
@@ -31,6 +34,7 @@ export async function uploadScheduleFile({
   onProgress,
   onStatusChange,
   onParseProgress,
+  onStructuredProgress,
 }: UploadScheduleFileParams): Promise<UploadScheduleFileResult> {
   const versionId = crypto.randomUUID();
   const storagePath = `${companyId}/${projectId}/${versionId}.xer`;
@@ -111,7 +115,7 @@ export async function uploadScheduleFile({
             const percent = Math.round((current / total) * 100);
             onParseProgress?.({ stage, current, total, percent });
           }
-        });
+        }, onStructuredProgress);
 
         console.log('[Upload] Updating parse status to "complete"...');
         await supabase
