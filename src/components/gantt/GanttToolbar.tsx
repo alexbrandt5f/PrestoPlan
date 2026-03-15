@@ -22,7 +22,7 @@ export default function GanttToolbar({ scheduleVersionId, onGoToDataDate, dataDa
 
   return (
     <>
-      <div className="bg-white border-b border-gray-200 px-4 py-2 flex items-center gap-2 flex-wrap">
+      <div className="flex items-center gap-2">
         <button
           onClick={() => setShowColumnPicker(true)}
           className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50"
@@ -51,8 +51,6 @@ export default function GanttToolbar({ scheduleVersionId, onGoToDataDate, dataDa
           <Settings className="w-4 h-4" />
           Settings
         </button>
-
-        <div className="ml-auto"></div>
       </div>
 
       {showColumnPicker && (

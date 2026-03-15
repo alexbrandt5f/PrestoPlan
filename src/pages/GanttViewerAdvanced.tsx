@@ -622,12 +622,12 @@ function GanttViewerContent() {
               <div>
                 <h1 className="text-lg font-semibold text-gray-900">
                   {version?.version_label}
-                  {cpmProject?.project_name && (
-                    <span className="text-gray-500 font-normal ml-2">
-                      ({cpmProject.project_name})
-                    </span>
-                  )}
                 </h1>
+                {cpmProject?.project_name && (
+                  <p className="text-sm text-gray-600">
+                    {cpmProject.project_name}
+                  </p>
+                )}
                 <p className="text-sm text-gray-500">
                   {groupedActivities.filter(i => i.type === 'activity').length.toLocaleString()} activities
                   {backgroundLoading && <span className="ml-2 text-blue-600">(loading more...)</span>}
@@ -635,15 +635,15 @@ function GanttViewerContent() {
               </div>
             </div>
           </div>
+
+          <GanttToolbar
+            scheduleVersionId={versionId || ''}
+            onGoToDataDate={handleGoToDataDate}
+            dataDate={version?.data_date || null}
+            onToggleColorLegend={() => setShowColorLegend(!showColorLegend)}
+          />
         </div>
       </div>
-
-      <GanttToolbar
-        scheduleVersionId={versionId || ''}
-        onGoToDataDate={handleGoToDataDate}
-        dataDate={version?.data_date || null}
-        onToggleColorLegend={() => setShowColorLegend(!showColorLegend)}
-      />
 
       <div className="flex-1 overflow-hidden relative">
         {showColorLegend && layout.viewSettings.colorByCodeTypeId && (
