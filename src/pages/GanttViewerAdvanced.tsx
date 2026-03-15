@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
@@ -71,9 +71,16 @@ function GanttViewerContent() {
   const [tracedActivityIds, setTracedActivityIds] = useState<Set<string>>(new Set());
   const [backgroundLoading, setBackgroundLoading] = useState(false);
 
+  const loadedVersionRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (!user || !projectId || !versionId) return;
-    loadData();
+
+    // Only load if we haven't loaded this version yet
+    if (loadedVersionRef.current !== versionId) {
+      loadedVersionRef.current = versionId;
+      loadData();
+    }
   }, [user, projectId, versionId]);
 
   useEffect(() => {
