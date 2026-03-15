@@ -352,37 +352,43 @@ export default function ActivityDetailTabs({
             <div className="space-y-2">
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div>
-                  <div className="text-gray-600 text-xs font-medium">Start</div>
+                  <div className="text-gray-600 text-xs font-medium">Early Start</div>
                   <div className="text-gray-900">{formatDate(activity.early_start)}</div>
                 </div>
                 <div>
-                  <div className="text-gray-600 text-xs font-medium">Finish</div>
+                  <div className="text-gray-600 text-xs font-medium">Early Finish</div>
                   <div className="text-gray-900">{formatDate(activity.early_finish)}</div>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div>
-                  <div className="text-gray-600 text-xs font-medium">Base Start</div>
-                  <div className="text-gray-400">-</div>
+                  <div className="text-gray-600 text-xs font-medium">Actual Start</div>
+                  <div className="text-gray-900">{formatDate(activity.actual_start)}</div>
                 </div>
                 <div>
-                  <div className="text-gray-600 text-xs font-medium">Base Finish</div>
-                  <div className="text-gray-400">-</div>
+                  <div className="text-gray-600 text-xs font-medium">Actual Finish</div>
+                  <div className="text-gray-900">{formatDate(activity.actual_finish)}</div>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div>
-                  <div className="text-gray-600 text-xs font-medium">Expected Finish</div>
-                  <div className="text-gray-900">
-                    {formatDate(activity.actual_finish || activity.early_finish)}
-                  </div>
+                  <div className="text-gray-600 text-xs font-medium">Late Start</div>
+                  <div className="text-gray-900">{formatDate(activity.late_start)}</div>
                 </div>
+                <div>
+                  <div className="text-gray-600 text-xs font-medium">Late Finish</div>
+                  <div className="text-gray-900">{formatDate(activity.late_finish)}</div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 text-sm">
                 <div>
                   <div className="text-gray-600 text-xs font-medium">Calendar</div>
                   <div className="text-gray-900">{calendar?.calendar_name || '-'}</div>
                 </div>
+                <div></div>
               </div>
             </div>
 

@@ -12,3 +12,34 @@ export function formatDate(dateString: string | null): string {
   const year = date.getFullYear().toString().slice(-2);
   return `${day}-${month}-${year}`;
 }
+
+export interface EffectiveDates {
+  start: Date | null;
+  finish: Date | null;
+}
+
+export function getEffectiveDates(activity: any): EffectiveDates {
+  let start: Date | null = null;
+  let finish: Date | null = null;
+
+  // Start date priority: actual_start > early_start
+  if (activity.actual_start) {
+    start = new Date(activity.actual_start);
+  } else if (activity.early_start) {
+    start = new Date(activity.early_start);
+  }
+
+  // Finish date priority: actual_finish > early_finish
+  if (activity.actual_finish) {
+    finish = new Date(activity.actual_finish);
+  } else if (activity.early_finish) {
+    finish = new Date(activity.early_finish);
+  }
+
+  return { start, finish };
+}
+
+export function isMilestone(activity: any): boolean {
+  return activity.activity_type === 'start_milestone' ||
+         activity.activity_type === 'finish_milestone';
+}

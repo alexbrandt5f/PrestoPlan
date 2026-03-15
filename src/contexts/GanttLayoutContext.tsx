@@ -26,6 +26,8 @@ const DEFAULT_COLUMNS: ColumnDefinition[] = [
   { id: 'at_completion_duration_days', label: 'AtComp Dur (d)', field: 'at_completion_duration_days', width: 85, visible: false, dataType: 'number', source: 'activity' },
   { id: 'early_start', label: 'Early Start', field: 'early_start', width: 90, visible: true, dataType: 'date', source: 'activity' },
   { id: 'early_finish', label: 'Early Finish', field: 'early_finish', width: 90, visible: true, dataType: 'date', source: 'activity' },
+  { id: 'actual_start', label: 'Actual Start', field: 'actual_start', width: 90, visible: false, dataType: 'date', source: 'activity' },
+  { id: 'actual_finish', label: 'Actual Finish', field: 'actual_finish', width: 90, visible: false, dataType: 'date', source: 'activity' },
   { id: 'total_float_hours', label: 'Total Float (h)', field: 'total_float_hours', width: 75, visible: true, dataType: 'number', source: 'activity' },
   { id: 'total_float_days', label: 'Total Float (d)', field: 'total_float_days', width: 75, visible: false, dataType: 'number', source: 'activity' },
   { id: 'free_float_hours', label: 'Free Float (h)', field: 'free_float_hours', width: 75, visible: false, dataType: 'number', source: 'activity' },

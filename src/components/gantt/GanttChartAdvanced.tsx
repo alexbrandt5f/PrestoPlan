@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState, useMemo } from 'react';
 import { useGanttLayout } from '../../contexts/GanttLayoutContext';
 import { supabase } from '../../lib/supabase';
-import { hoursToWorkingDays } from '../../lib/dateUtils';
+import { hoursToWorkingDays, getEffectiveDates, isMilestone } from '../../lib/dateUtils';
 
 interface Activity {
   id: string;
@@ -143,10 +143,9 @@ export default function GanttChartAdvanced({
 
     if (selectedIndex === -1) return;
 
-    if (!selectedActivity.early_start || !selectedActivity.early_finish) return;
+    const { start: startDate, finish: finishDate } = getEffectiveDates(selectedActivity);
+    if (!startDate || !finishDate) return;
 
-    const startDate = new Date(selectedActivity.early_start);
-    const finishDate = new Date(selectedActivity.early_finish);
     const x1 = dateToX(startDate);
     const x2 = dateToX(finishDate);
 
@@ -206,31 +205,30 @@ export default function GanttChartAdvanced({
       return { minDate: now, maxDate: now, timelineWidth: 1000 };
     }
 
-    let min = new Date();
-    let max = new Date();
-    let hasValidDates = false;
+    let minTimestamp = Infinity;
+    let maxTimestamp = -Infinity;
 
     activities.forEach(activity => {
-      if (activity.early_start) {
-        const start = new Date(activity.early_start);
-        if (!hasValidDates || start < min) {
-          min = start;
-          hasValidDates = true;
-        }
-      }
-      if (activity.early_finish) {
-        const finish = new Date(activity.early_finish);
-        if (!hasValidDates || finish > max) {
-          max = finish;
-          hasValidDates = true;
-        }
-      }
+      const dates = [
+        activity.early_start,
+        activity.early_finish,
+        activity.actual_start,
+        activity.actual_finish
+      ].filter(Boolean).map(d => new Date(d as string).getTime());
+
+      dates.forEach(timestamp => {
+        if (timestamp < minTimestamp) minTimestamp = timestamp;
+        if (timestamp > maxTimestamp) maxTimestamp = timestamp;
+      });
     });
 
-    if (!hasValidDates) {
+    if (!isFinite(minTimestamp) || !isFinite(maxTimestamp)) {
       const now = new Date();
       return { minDate: now, maxDate: now, timelineWidth: 1000 };
     }
+
+    const min = new Date(minTimestamp);
+    const max = new Date(maxTimestamp);
 
     min.setDate(min.getDate() - 30);
     max.setDate(max.getDate() + 30);
@@ -398,9 +396,8 @@ export default function GanttChartAdvanced({
       if (item.type === 'activity') {
         const activity = item.activity!;
 
-        if (activity.early_start && activity.early_finish) {
-          const startDate = new Date(activity.early_start);
-          const finishDate = new Date(activity.early_finish);
+        const { start: startDate, finish: finishDate } = getEffectiveDates(activity);
+        if (startDate && finishDate) {
           const x1 = dateToX(startDate);
           const x2 = dateToX(finishDate);
           const rowY = HEADER_HEIGHT + (rowIndex * ROW_HEIGHT);
@@ -415,8 +412,8 @@ export default function GanttChartAdvanced({
               activity.activity_name,
               `Duration: ${hoursToWorkingDays(activity.original_duration_hours, hoursPerDay)}`,
               `Float: ${hoursToWorkingDays(activity.total_float_hours, hoursPerDay)}`,
-              `Start: ${new Date(activity.early_start).toLocaleDateString()}`,
-              `Finish: ${new Date(activity.early_finish).toLocaleDateString()}`
+              `Start: ${startDate.toLocaleDateString()}`,
+              `Finish: ${finishDate.toLocaleDateString()}`
             ].join('\n');
 
             setTooltip({
@@ -574,14 +571,9 @@ export default function GanttChartAdvanced({
         let maxFinish: Date | null = null;
 
         item.activities.forEach(act => {
-          if (act.early_start) {
-            const start = new Date(act.early_start);
-            if (!minStart || start < minStart) minStart = start;
-          }
-          if (act.early_finish) {
-            const finish = new Date(act.early_finish);
-            if (!maxFinish || finish > maxFinish) maxFinish = finish;
-          }
+          const { start, finish } = getEffectiveDates(act);
+          if (start && (!minStart || start < minStart)) minStart = start;
+          if (finish && (!maxFinish || finish > maxFinish)) maxFinish = finish;
         });
 
         if (minStart && maxFinish) {
@@ -602,10 +594,8 @@ export default function GanttChartAdvanced({
       if (item.type === 'activity') {
         const activity = item.activity!;
 
-        if (!activity.early_start || !activity.early_finish) return;
-
-        const startDate = new Date(activity.early_start);
-        const finishDate = new Date(activity.early_finish);
+        const { start: startDate, finish: finishDate } = getEffectiveDates(activity);
+        if (!startDate || !finishDate) return;
 
         const x1 = dateToX(startDate) - scrollLeft;
         const x2 = dateToX(finishDate) - scrollLeft;
@@ -640,12 +630,16 @@ export default function GanttChartAdvanced({
           const barWidth = Math.max(2, x2 - x1);
 
           let progressWidth = 0;
-          if (dataDate && activity.early_start) {
+          if (dataDate) {
             const dataDateObj = new Date(dataDate);
-            const startDateObj = new Date(activity.early_start);
-            if (dataDateObj > startDateObj) {
-              const progressX = dateToX(dataDateObj) - scrollLeft;
-              progressWidth = Math.max(0, Math.min(progressX - x1, barWidth));
+
+            if (activity.activity_status === 'complete') {
+              progressWidth = barWidth;
+            } else if (activity.activity_status === 'in_progress') {
+              if (dataDateObj > startDate) {
+                const progressX = dateToX(dataDateObj) - scrollLeft;
+                progressWidth = Math.max(0, Math.min(progressX - x1, barWidth));
+              }
             }
           }
 
@@ -745,7 +739,12 @@ export default function GanttChartAdvanced({
       const pred = activityMap.get(rel.predecessor_activity_id);
       const succ = activityMap.get(rel.successor_activity_id);
 
-      if (!pred || !succ || !pred.early_start || !pred.early_finish || !succ.early_start || !succ.early_finish) return;
+      if (!pred || !succ) return;
+
+      const predDates = getEffectiveDates(pred);
+      const succDates = getEffectiveDates(succ);
+
+      if (!predDates.start || !predDates.finish || !succDates.start || !succDates.finish) return;
 
       const predIndex = visibleGroupedActivities.findIndex(item => item.type === 'activity' && item.activity?.id === pred.id);
       const succIndex = visibleGroupedActivities.findIndex(item => item.type === 'activity' && item.activity?.id === succ.id);
@@ -757,10 +756,10 @@ export default function GanttChartAdvanced({
       const succY = HEADER_HEIGHT + (succIndex * ROW_HEIGHT) + ROW_HEIGHT / 2 - scrollTop;
 
       // X positions depend on relationship type (FS, SS, FF, SF)
-      const predStart = dateToX(new Date(pred.early_start)) - scrollLeft;
-      const predFinish = dateToX(new Date(pred.early_finish)) - scrollLeft;
-      const succStart = dateToX(new Date(succ.early_start)) - scrollLeft;
-      const succFinish = dateToX(new Date(succ.early_finish)) - scrollLeft;
+      const predStart = dateToX(predDates.start) - scrollLeft;
+      const predFinish = dateToX(predDates.finish) - scrollLeft;
+      const succStart = dateToX(succDates.start) - scrollLeft;
+      const succFinish = dateToX(succDates.finish) - scrollLeft;
 
       // Determine departure point (from predecessor) and arrival point (to successor)
       // based on relationship type: FS, SS, FF, SF
