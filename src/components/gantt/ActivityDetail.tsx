@@ -85,113 +85,128 @@ export default function ActivityDetail({ activity, calendars }: ActivityDetailPr
     );
   }
 
+  const isCritical = activity.total_float_hours !== null && activity.total_float_hours <= 0;
+
   return (
     <div className="h-full overflow-auto p-6 bg-white">
-      <h2 className="text-lg font-semibold text-gray-900 mb-4">Activity Details</h2>
-
-      <div className="space-y-6">
-        <div>
-          <h3 className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b border-gray-200">
-            General Information
-          </h3>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Activity ID</label>
-              <p className="text-sm text-gray-900">{activity.activity_id_display}</p>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Activity Type</label>
-              <p className="text-sm text-gray-900">{formatActivityType(activity.activity_type)}</p>
-            </div>
-            <div className="col-span-2">
-              <label className="block text-xs font-medium text-gray-500 mb-1">Activity Name</label>
-              <p className="text-sm text-gray-900">{activity.activity_name}</p>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Status</label>
-              <p className="text-sm text-gray-900">{formatStatus(activity.activity_status)}</p>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Calendar</label>
-              <p className="text-sm text-gray-900">{calendar?.calendar_name || '-'}</p>
-            </div>
-          </div>
+      <div className="grid grid-cols-[120px_1fr_120px_1fr_120px_1fr] gap-x-4 gap-y-4 text-sm">
+        <label className="font-medium text-gray-900">ID</label>
+        <div className="border-b border-gray-300 pb-1">
+          <span className="text-gray-900">{activity.activity_id_display}</span>
         </div>
 
-        <div>
-          <h3 className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b border-gray-200">
-            Schedule Dates
-          </h3>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Early Start</label>
-              <p className="text-sm text-gray-900">{formatDate(activity.early_start)}</p>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Early Finish</label>
-              <p className="text-sm text-gray-900">{formatDate(activity.early_finish)}</p>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Late Start</label>
-              <p className="text-sm text-gray-900">{formatDate(activity.late_start)}</p>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Late Finish</label>
-              <p className="text-sm text-gray-900">{formatDate(activity.late_finish)}</p>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Actual Start</label>
-              <p className="text-sm text-gray-900">{formatDate(activity.actual_start)}</p>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Actual Finish</label>
-              <p className="text-sm text-gray-900">{formatDate(activity.actual_finish)}</p>
-            </div>
-          </div>
+        <label className="font-medium text-gray-900">Name</label>
+        <div className="col-span-3 border-b border-gray-300 pb-1">
+          <span className="text-gray-900">{activity.activity_name}</span>
         </div>
 
-        <div>
-          <h3 className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b border-gray-200">
-            Duration & Float
-          </h3>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Original Duration</label>
-              <p className="text-sm text-gray-900 tabular-nums">{getWorkingDays(activity.original_duration_hours)} days</p>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Remaining Duration</label>
-              <p className="text-sm text-gray-900 tabular-nums">{getWorkingDays(activity.remaining_duration_hours)} days</p>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Total Float</label>
-              <p className="text-sm text-gray-900 tabular-nums">{getWorkingDays(activity.total_float_hours)} days</p>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Free Float</label>
-              <p className="text-sm text-gray-900 tabular-nums">{getWorkingDays(activity.free_float_hours)} days</p>
-            </div>
-          </div>
+        <label className="font-medium text-gray-900">Start</label>
+        <div className="border-b border-gray-300 pb-1">
+          <span className="text-gray-900">{formatDate(activity.early_start)}</span>
         </div>
 
-        <div>
-          <h3 className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b border-gray-200">
-            Progress
-          </h3>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Physical % Complete</label>
-              <p className="text-sm text-gray-900 tabular-nums">
-                {activity.physical_percent_complete !== null ? `${activity.physical_percent_complete.toFixed(1)}%` : '-'}
-              </p>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Duration % Complete</label>
-              <p className="text-sm text-gray-900 tabular-nums">
-                {activity.duration_percent_complete !== null ? `${activity.duration_percent_complete.toFixed(1)}%` : '-'}
-              </p>
-            </div>
-          </div>
+        <label className="font-medium text-gray-900">Finish</label>
+        <div className="border-b border-gray-300 pb-1">
+          <span className="text-gray-900">{formatDate(activity.early_finish)}</span>
+        </div>
+
+        <label className="font-medium text-gray-900">Expected Finish</label>
+        <div className="border-b border-gray-300 pb-1">
+          <span className="text-gray-900">{formatDate(activity.actual_finish || activity.early_finish)}</span>
+        </div>
+
+        <label className="font-medium text-gray-900">Base Start</label>
+        <div className="border-b border-gray-300 pb-1">
+          <span className="text-gray-900">{formatDate(activity.early_start)}</span>
+        </div>
+
+        <label className="font-medium text-gray-900">Base Finish</label>
+        <div className="border-b border-gray-300 pb-1">
+          <span className="text-gray-900">{formatDate(activity.early_finish)}</span>
+        </div>
+
+        <label className="font-medium text-gray-900">Criticality</label>
+        <div className="border-b border-gray-300 pb-1">
+          <span className="text-gray-900">{isCritical ? 'Critical' : 'Non-Critical'}</span>
+        </div>
+
+        <label className="font-medium text-gray-900">Act % Cmpl</label>
+        <div className="border-b border-gray-300 pb-1">
+          <span className="text-gray-900 tabular-nums">
+            {activity.physical_percent_complete !== null ? `${activity.physical_percent_complete.toFixed(1)}%` : '-'}
+          </span>
+        </div>
+
+        <label className="font-medium text-gray-900">Base % Cmpl</label>
+        <div className="border-b border-gray-300 pb-1">
+          <span className="text-gray-900 tabular-nums">
+            {activity.duration_percent_complete !== null ? `${activity.duration_percent_complete.toFixed(1)}%` : '-'}
+          </span>
+        </div>
+
+        <label className="font-medium text-gray-900">Total Float</label>
+        <div className="border-b border-gray-300 pb-1">
+          <span className="text-gray-900 tabular-nums">{getWorkingDays(activity.total_float_hours)}</span>
+        </div>
+
+        <label className="font-medium text-gray-900">Pri Constraint</label>
+        <div className="border-b border-gray-300 pb-1">
+          <span className="text-gray-900">-</span>
+        </div>
+
+        <label className="font-medium text-gray-900">Date</label>
+        <div className="border-b border-gray-300 pb-1">
+          <span className="text-gray-900">-</span>
+        </div>
+
+        <label className="font-medium text-gray-900">Free Float</label>
+        <div className="border-b border-gray-300 pb-1">
+          <span className="text-gray-900 tabular-nums">{getWorkingDays(activity.free_float_hours)}</span>
+        </div>
+
+        <label className="font-medium text-gray-900">Sec Constraint</label>
+        <div className="border-b border-gray-300 pb-1">
+          <span className="text-gray-900">-</span>
+        </div>
+
+        <label className="font-medium text-gray-900">Date</label>
+        <div className="border-b border-gray-300 pb-1">
+          <span className="text-gray-900">-</span>
+        </div>
+
+        <label className="font-medium text-gray-900">Calendar</label>
+        <div className="border-b border-gray-300 pb-1">
+          <span className="text-gray-900">{calendar?.calendar_name || '-'}</span>
+        </div>
+
+        <div className="col-span-6 mt-4" />
+
+        <label className="font-medium text-gray-900">Orig Dur</label>
+        <div className="border-b border-gray-300 pb-1">
+          <span className="text-gray-900 tabular-nums">{getWorkingDays(activity.original_duration_hours)}</span>
+        </div>
+
+        <label className="font-medium text-gray-900">Act Dur</label>
+        <div className="border-b border-gray-300 pb-1">
+          <span className="text-gray-900 tabular-nums">
+            {activity.physical_percent_complete !== null && activity.original_duration_hours !== null
+              ? ((activity.original_duration_hours * activity.physical_percent_complete) / 100 / (calendar?.hours_per_day || 8)).toFixed(1)
+              : '-'}
+          </span>
+        </div>
+
+        <label className="font-medium text-gray-900">Rem Dur</label>
+        <div className="border-b border-gray-300 pb-1">
+          <span className="text-gray-900 tabular-nums">{getWorkingDays(activity.remaining_duration_hours)}</span>
+        </div>
+
+        <label className="font-medium text-gray-900">At Compl</label>
+        <div className="col-span-2 border-b border-gray-300 pb-1">
+          <span className="text-gray-900 tabular-nums">
+            {activity.original_duration_hours !== null && activity.remaining_duration_hours !== null && activity.physical_percent_complete !== null
+              ? ((activity.original_duration_hours * activity.physical_percent_complete) / 100 / (calendar?.hours_per_day || 8) + activity.remaining_duration_hours / (calendar?.hours_per_day || 8)).toFixed(1)
+              : '-'}
+          </span>
         </div>
       </div>
     </div>
