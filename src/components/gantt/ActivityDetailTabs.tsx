@@ -519,7 +519,7 @@ export default function ActivityDetailTabs({
                                 <td className="px-2 py-1">{pred.activity_id_display}</td>
                                 <td className="px-2 py-1 truncate" title={pred.activity_name}>{pred.activity_name}</td>
                                 <td className="px-2 py-1 tabular-nums">{typeLag}</td>
-                                <td className="px-2 py-1 tabular-nums text-right">{hoursToDays(rel.relationship_float_hours, hoursPerDay)}</td>
+                                <td className="px-2 py-1 tabular-nums text-right">{rel.relationship_float_hours !== null && rel.relationship_float_hours !== undefined ? rel.relationship_float_hours.toFixed(1) : '-'}</td>
                                 <td className="px-2 py-1 text-center">
                                   <input
                                     type="checkbox"
@@ -580,7 +580,7 @@ export default function ActivityDetailTabs({
                                 <td className="px-2 py-1">{succ.activity_id_display}</td>
                                 <td className="px-2 py-1 truncate" title={succ.activity_name}>{succ.activity_name}</td>
                                 <td className="px-2 py-1 tabular-nums">{typeLag}</td>
-                                <td className="px-2 py-1 tabular-nums text-right">{hoursToDays(rel.relationship_float_hours, succHoursPerDay)}</td>
+                                <td className="px-2 py-1 tabular-nums text-right">{rel.relationship_float_hours !== null && rel.relationship_float_hours !== undefined ? rel.relationship_float_hours.toFixed(1) : '-'}</td>
                                 <td className="px-2 py-1 text-center">
                                   <input
                                     type="checkbox"
