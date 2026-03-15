@@ -54,6 +54,7 @@ function GanttViewerContent() {
 
   const [loading, setLoading] = useState(true);
   const [loadingProgress, setLoadingProgress] = useState(0);
+  const [loadingMessage, setLoadingMessage] = useState('');
   const [version, setVersion] = useState<ScheduleVersion | null>(null);
   const [project, setProject] = useState<Project | null>(null);
   const [cpmProject, setCpmProject] = useState<CpmProject | null>(null);
@@ -84,9 +85,10 @@ function GanttViewerContent() {
   async function loadData() {
     try {
       setLoading(true);
-      setLoadingProgress(10);
+      setLoadingProgress(5);
+      setLoadingMessage('Loading project metadata...');
 
-      const [projectRes, versionRes, calendarsRes, wbsRes, cpmProjectRes, rootWbsRes] = await Promise.all([
+      const [projectRes, versionRes, calendarsRes, cpmProjectRes, rootWbsRes] = await Promise.all([
         supabase
           .from('projects')
           .select('id, settings')
@@ -102,11 +104,6 @@ function GanttViewerContent() {
           .select('id, calendar_name, hours_per_day')
           .eq('schedule_version_id', versionId),
         supabase
-          .from('cpm_wbs')
-          .select('id, wbs_name, wbs_code, parent_wbs_id, level, sort_order')
-          .eq('schedule_version_id', versionId)
-          .order('sort_order', { ascending: true }),
-        supabase
           .from('cpm_projects')
           .select('project_name')
           .eq('schedule_version_id', versionId)
@@ -119,13 +116,12 @@ function GanttViewerContent() {
           .maybeSingle()
       ]);
 
-      setLoadingProgress(30);
+      setLoadingProgress(10);
 
       if (projectRes.error) throw projectRes.error;
       if (versionRes.error) throw versionRes.error;
       if (calendarsRes.error) throw calendarsRes.error;
       if (cpmProjectRes.error) console.warn('CPM project query failed:', cpmProjectRes.error);
-      if (wbsRes.error) console.warn('WBS query failed, grouping will fall back to flat list:', wbsRes.error);
 
       if (!versionRes.data) {
         showToast('Schedule version not found', 'error');
@@ -139,45 +135,39 @@ function GanttViewerContent() {
       setRootWbsName(rootWbsRes.data?.wbs_name || null);
       setCalendars(calendarsRes.data || []);
 
-      if (wbsRes.data) {
-        const map = new Map();
-        wbsRes.data.forEach(wbs => map.set(wbs.id, wbs));
-        setWbsMap(map);
-        console.log('DEBUG: wbsMap size:', map.size);
-      }
+      setLoadingProgress(15);
+      setLoadingMessage('Loading WBS hierarchy...');
 
-      setLoadingProgress(50);
+      // Load ALL WBS nodes with pagination
+      const allWbs = await fetchAllWbs();
+      const wbsMapLocal = new Map();
+      allWbs.forEach(wbs => wbsMapLocal.set(wbs.id, wbs));
+      setWbsMap(wbsMapLocal);
+      console.log('DEBUG: wbsMap size:', wbsMapLocal.size);
 
-      const INITIAL_BATCH_SIZE = 2000;
-      const BATCH_SIZE = 1000;
+      setLoadingProgress(25);
+      setLoadingMessage('Loading activities...');
 
-      const { data: firstBatch, error: firstError } = await supabase
-        .from('cpm_activities')
-        .select('*')
-        .eq('schedule_version_id', versionId)
-        .order('early_start', { ascending: true })
-        .range(0, INITIAL_BATCH_SIZE - 1);
+      // Load ALL activities with pagination and progress updates
+      const allActivities = await fetchAllActivities();
+      setActivities(allActivities);
+      console.log('DEBUG: activities loaded:', allActivities.length);
 
-      if (firstError) throw firstError;
+      setLoadingProgress(60);
+      setLoadingMessage('Loading activity codes...');
 
-      setLoadingProgress(70);
+      // Load code assignments for all activities
+      await loadCodeAssignmentsForActivities(allActivities);
 
-      const firstBatchActivities = firstBatch || [];
-      setActivities(firstBatchActivities);
-      console.log('DEBUG: activities loaded:', firstBatchActivities.length);
+      setLoadingProgress(80);
+      setLoadingMessage('Loading custom fields...');
 
-      await Promise.all([
-        loadCodeAssignmentsBatched([firstBatchActivities], 0),
-        loadCustomFieldValuesBatched([firstBatchActivities], 0)
-      ]);
+      // Load custom field values for all activities
+      await loadCustomFieldValuesForActivities(allActivities);
 
       setLoadingProgress(100);
+      setLoadingMessage('Complete');
       setLoading(false);
-
-      if (firstBatchActivities.length === INITIAL_BATCH_SIZE) {
-        setBackgroundLoading(true);
-        loadRemainingData(INITIAL_BATCH_SIZE, BATCH_SIZE);
-      }
     } catch (error) {
       console.error('Error loading Gantt data:', error);
       showToast('Failed to load schedule data', 'error');
@@ -185,148 +175,177 @@ function GanttViewerContent() {
     }
   }
 
-  async function loadRemainingData(startFrom: number, batchSize: number) {
-    try {
-      let from = startFrom;
+  async function fetchAllWbs(): Promise<any[]> {
+    const PAGE_SIZE = 1000;
+    let allWbs: any[] = [];
+    let offset = 0;
+    let hasMore = true;
+
+    while (hasMore) {
+      const { data, error } = await supabase
+        .from('cpm_wbs')
+        .select('id, wbs_name, wbs_code, parent_wbs_id, level, sort_order')
+        .eq('schedule_version_id', versionId)
+        .order('sort_order', { ascending: true })
+        .range(offset, offset + PAGE_SIZE - 1);
+
+      if (error) {
+        console.warn('WBS query error:', error);
+        break;
+      }
+
+      if (data && data.length > 0) {
+        allWbs = [...allWbs, ...data];
+        offset += PAGE_SIZE;
+        hasMore = data.length === PAGE_SIZE;
+      } else {
+        hasMore = false;
+      }
+    }
+
+    return allWbs;
+  }
+
+  async function fetchAllActivities(): Promise<Activity[]> {
+    const PAGE_SIZE = 1000;
+    let allActivities: Activity[] = [];
+    let offset = 0;
+    let hasMore = true;
+
+    while (hasMore) {
+      const { data, error } = await supabase
+        .from('cpm_activities')
+        .select('*')
+        .eq('schedule_version_id', versionId)
+        .order('early_start', { ascending: true })
+        .range(offset, offset + PAGE_SIZE - 1);
+
+      if (error) throw error;
+
+      if (data && data.length > 0) {
+        allActivities = [...allActivities, ...data];
+        offset += PAGE_SIZE;
+        hasMore = data.length === PAGE_SIZE;
+
+        // Update progress
+        const progress = 25 + Math.min(35, (allActivities.length / 10000) * 35);
+        setLoadingProgress(progress);
+        setLoadingMessage(`Loading activities... (${allActivities.length.toLocaleString()})`);
+      } else {
+        hasMore = false;
+      }
+    }
+
+    return allActivities;
+  }
+
+  async function loadCodeAssignmentsForActivities(activities: Activity[]) {
+    if (activities.length === 0) return;
+
+    const CHUNK_SIZE = 1000;
+    const PAGE_SIZE = 1000;
+
+    for (let i = 0; i < activities.length; i += CHUNK_SIZE) {
+      const chunk = activities.slice(i, i + CHUNK_SIZE);
+      const activityIds = chunk.map(a => a.id);
+
+      // Fetch code assignments with pagination (since there could be 16,436 assignments)
+      let allAssignments: any[] = [];
+      let offset = 0;
       let hasMore = true;
 
       while (hasMore) {
         const { data, error } = await supabase
-          .from('cpm_activities')
-          .select('*')
+          .from('cpm_code_assignments')
+          .select(`
+            activity_id,
+            code_value_id,
+            cpm_code_values!inner (
+              id,
+              code_type_id,
+              code_value_name
+            )
+          `)
           .eq('schedule_version_id', versionId)
-          .order('early_start', { ascending: true })
-          .range(from, from + batchSize - 1);
+          .in('activity_id', activityIds)
+          .range(offset, offset + PAGE_SIZE - 1);
 
         if (error) {
-          console.error('Error loading additional activities:', error);
+          console.error('Error loading code assignments:', error);
           break;
         }
 
         if (data && data.length > 0) {
-          setActivities(prev => [...prev, ...data]);
-
-          await Promise.all([
-            loadCodeAssignmentsBatched([data], from),
-            loadCustomFieldValuesBatched([data], from)
-          ]);
-
-          from += batchSize;
-          hasMore = data.length === batchSize;
+          allAssignments = [...allAssignments, ...data];
+          offset += PAGE_SIZE;
+          hasMore = data.length === PAGE_SIZE;
         } else {
           hasMore = false;
         }
       }
-    } catch (error) {
-      console.error('Error loading remaining data:', error);
-    } finally {
-      setBackgroundLoading(false);
-    }
-  }
 
-  async function loadCodeAssignmentsBatched(activityBatches: Activity[][], batchIndex: number) {
-    const CHUNK_SIZE = 1000;
-
-    for (const activities of activityBatches) {
-      if (activities.length === 0) continue;
-
-      for (let i = 0; i < activities.length; i += CHUNK_SIZE) {
-        const chunk = activities.slice(i, i + CHUNK_SIZE);
-
-        try {
-          const { data, error } = await supabase
-            .from('cpm_code_assignments')
-            .select(`
-              activity_id,
-              code_value_id,
-              cpm_code_values!inner (
-                id,
-                code_type_id,
-                code_value_name
-              )
-            `)
-            .eq('schedule_version_id', versionId)
-            .in('activity_id', chunk.map(a => a.id));
-
-          if (error) {
-            console.error('Error loading code assignments chunk:', error);
-            continue;
-          }
-
-          if (data) {
-            setCodeAssignments(prev => {
-              const newMap = new Map(prev);
-
-              data.forEach((assignment: any) => {
-                if (!newMap.has(assignment.activity_id)) {
-                  newMap.set(assignment.activity_id, new Map());
-                }
-                const activityCodes = newMap.get(assignment.activity_id)!;
-                activityCodes.set(
-                  assignment.cpm_code_values.code_type_id,
-                  assignment.cpm_code_values.code_value_name
-                );
-              });
-
-              return newMap;
-            });
-          }
-        } catch (error) {
-          console.error('Error in code assignments batch:', error);
-        }
+      // Update state with all assignments for this chunk
+      if (allAssignments.length > 0) {
+        setCodeAssignments(prev => {
+          const newMap = new Map(prev);
+          allAssignments.forEach((assignment: any) => {
+            if (!newMap.has(assignment.activity_id)) {
+              newMap.set(assignment.activity_id, new Map());
+            }
+            const activityCodes = newMap.get(assignment.activity_id)!;
+            activityCodes.set(
+              assignment.cpm_code_values.code_type_id,
+              assignment.cpm_code_values.code_value_name
+            );
+          });
+          return newMap;
+        });
       }
     }
   }
 
-  async function loadCustomFieldValuesBatched(activityBatches: Activity[][], batchIndex: number) {
+  async function loadCustomFieldValuesForActivities(activities: Activity[]) {
+    if (activities.length === 0) return;
+
     const CHUNK_SIZE = 1000;
 
-    for (const activities of activityBatches) {
-      if (activities.length === 0) continue;
+    for (let i = 0; i < activities.length; i += CHUNK_SIZE) {
+      const chunk = activities.slice(i, i + CHUNK_SIZE);
 
-      for (let i = 0; i < activities.length; i += CHUNK_SIZE) {
-        const chunk = activities.slice(i, i + CHUNK_SIZE);
+      const { data, error } = await supabase
+        .from('cpm_custom_field_values')
+        .select(`
+          activity_id,
+          field_type_id,
+          field_value,
+          field_value_numeric,
+          field_value_date
+        `)
+        .eq('schedule_version_id', versionId)
+        .in('activity_id', chunk.map(a => a.id));
 
-        try {
-          const { data, error } = await supabase
-            .from('cpm_custom_field_values')
-            .select(`
-              activity_id,
-              field_type_id,
-              field_value,
-              field_value_numeric,
-              field_value_date
-            `)
-            .eq('schedule_version_id', versionId)
-            .in('activity_id', chunk.map(a => a.id));
+      if (error) {
+        console.error('Error loading custom field values:', error);
+        continue;
+      }
 
-          if (error) {
-            console.error('Error loading custom field values chunk:', error);
-            continue;
-          }
-
-          if (data) {
-            setCustomFieldValues(prev => {
-              const newMap = new Map(prev);
-
-              data.forEach((fieldValue: any) => {
-                if (!newMap.has(fieldValue.activity_id)) {
-                  newMap.set(fieldValue.activity_id, new Map());
-                }
-                const activityFields = newMap.get(fieldValue.activity_id)!;
-                const value = fieldValue.field_value_numeric ?? fieldValue.field_value_date ?? fieldValue.field_value;
-                activityFields.set(fieldValue.field_type_id, value);
-              });
-
-              return newMap;
-            });
-          }
-        } catch (error) {
-          console.error('Error in custom field values batch:', error);
-        }
+      if (data && data.length > 0) {
+        setCustomFieldValues(prev => {
+          const newMap = new Map(prev);
+          data.forEach((fieldValue: any) => {
+            if (!newMap.has(fieldValue.activity_id)) {
+              newMap.set(fieldValue.activity_id, new Map());
+            }
+            const activityFields = newMap.get(fieldValue.activity_id)!;
+            const value = fieldValue.field_value_numeric ?? fieldValue.field_value_date ?? fieldValue.field_value;
+            activityFields.set(fieldValue.field_type_id, value);
+          });
+          return newMap;
+        });
       }
     }
   }
+
 
   async function generateCodeColors() {
     if (!layout.viewSettings.colorByCodeTypeId) return;
@@ -605,7 +624,7 @@ function GanttViewerContent() {
             </div>
           </div>
           <div className="text-sm text-gray-600">
-            Loading schedule data... {loadingProgress}%
+            {loadingMessage || `Loading schedule data... ${loadingProgress}%`}
           </div>
         </div>
       </div>
