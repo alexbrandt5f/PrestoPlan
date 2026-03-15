@@ -301,120 +301,109 @@ export default function ActivityDetailTabs({
         </button>
       </div>
 
-      <div className="flex-1 overflow-auto p-4">
+      <div className="flex-1 overflow-auto p-3">
         {activeTab === 'general' && (
-          <div className="space-y-3">
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <label className="text-xs font-medium text-gray-500">Activity ID</label>
-                <div className="text-xs text-gray-900">{activity.activity_id_display}</div>
-              </div>
-              <div>
-                <label className="text-xs font-medium text-gray-500">Status</label>
-                <div className="text-xs text-gray-900">{activity.activity_status || '-'}</div>
-              </div>
-              <div>
-                <label className="text-xs font-medium text-gray-500">Critical</label>
-                <div className="text-xs text-gray-900">{activity.is_critical ? 'Yes' : 'No'}</div>
-              </div>
+          <div className="grid grid-cols-[auto_1fr_auto_1fr] gap-x-3 gap-y-2 text-xs">
+            <label className="text-gray-500">ID</label>
+            <div className="text-gray-900 border-b border-gray-300">{activity.activity_id_display}</div>
+            <label className="text-gray-500">Name</label>
+            <div className="text-gray-900 border-b border-gray-300">{activity.activity_name}</div>
+
+            <div className="col-start-3"></div>
+            <div className="col-start-4"></div>
+            <div className="col-start-3"></div>
+            <div className="col-start-4"></div>
+
+            <label className="text-gray-500">Criticality</label>
+            <div className="text-gray-900 border-b border-gray-300">
+              {activity.is_critical ? 'Critical' : 'Non-Critical'}
             </div>
 
-            <div>
-              <label className="text-xs font-medium text-gray-500">Activity Name</label>
-              <div className="text-xs text-gray-900">{activity.activity_name}</div>
+            <label className="text-gray-500">Total Float</label>
+            <div className="text-gray-900 border-b border-gray-300 text-right tabular-nums">
+              {hoursToWorkingDays(activity.total_float_hours, hoursPerDay)}
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <label className="text-xs font-medium text-gray-500">Type</label>
-                <div className="text-xs text-gray-900">{activity.activity_type || '-'}</div>
-              </div>
-              <div>
-                <label className="text-xs font-medium text-gray-500">Calendar</label>
-                <div className="text-xs text-gray-900">{calendar?.calendar_name || '-'}</div>
-              </div>
-              <div>
-                <label className="text-xs font-medium text-gray-500">Criticality</label>
-                <div className="mt-1">{getCriticalityBadge()}</div>
-              </div>
+            <div className="col-start-3"></div>
+            <div className="col-start-4"></div>
+
+            <label className="text-gray-500">Free Float</label>
+            <div className="text-gray-900 border-b border-gray-300 text-right tabular-nums">
+              {hoursToWorkingDays(activity.free_float_hours, hoursPerDay)}
             </div>
 
-            <div className="border-t pt-2">
-              <h3 className="text-xs font-semibold text-gray-900 mb-2">Dates</h3>
-              <div className="grid grid-cols-3 gap-2 text-xs">
-                <div>
-                  <span className="font-medium text-gray-500">Early Start:</span>
-                  <div className="text-gray-900">{formatDate(activity.early_start)}</div>
-                </div>
-                <div>
-                  <span className="font-medium text-gray-500">Early Finish:</span>
-                  <div className="text-gray-900">{formatDate(activity.early_finish)}</div>
-                </div>
-                <div>
-                  <span className="font-medium text-gray-500">Late Start:</span>
-                  <div className="text-gray-900">{formatDate(activity.late_start)}</div>
-                </div>
-                <div>
-                  <span className="font-medium text-gray-500">Late Finish:</span>
-                  <div className="text-gray-900">{formatDate(activity.late_finish)}</div>
-                </div>
-                <div>
-                  <span className="font-medium text-gray-500">Actual Start:</span>
-                  <div className="text-gray-900">{formatDate(activity.actual_start)}</div>
-                </div>
-                <div>
-                  <span className="font-medium text-gray-500">Actual Finish:</span>
-                  <div className="text-gray-900">{formatDate(activity.actual_finish)}</div>
-                </div>
-              </div>
+            <label className="text-gray-500">Start</label>
+            <div className="text-gray-900 border-b border-gray-300">{formatDate(activity.early_start)}</div>
+            <label className="text-gray-500">Finish</label>
+            <div className="text-gray-900 border-b border-gray-300">{formatDate(activity.early_finish)}</div>
+
+            <label className="text-gray-500">Expected Finish</label>
+            <div className="text-gray-900 border-b border-gray-300">
+              {formatDate(activity.actual_finish || activity.early_finish)}
+            </div>
+            <label className="text-gray-500">Calendar</label>
+            <div className="text-gray-900 border-b border-gray-300">{calendar?.calendar_name || '-'}</div>
+
+            <label className="text-gray-500">Base Start</label>
+            <div className="text-gray-900 border-b border-gray-300">{formatDate(activity.early_start)}</div>
+            <label className="text-gray-500">Base Finish</label>
+            <div className="text-gray-900 border-b border-gray-300">{formatDate(activity.early_finish)}</div>
+
+            <div className="col-start-3"></div>
+            <div className="col-start-4"></div>
+
+            <label className="text-gray-500">Act % Cmpl</label>
+            <div className="text-gray-900 border-b border-gray-300 text-right tabular-nums">
+              {activity.physical_percent_complete !== null ? `${activity.physical_percent_complete.toFixed(1)}%` : '-'}
+            </div>
+            <label className="text-gray-500">Base % Cmpl</label>
+            <div className="text-gray-900 border-b border-gray-300 text-right tabular-nums">
+              {activity.duration_percent_complete !== null ? `${activity.duration_percent_complete.toFixed(1)}%` : '-'}
             </div>
 
-            <div className="border-t pt-2">
-              <h3 className="text-xs font-semibold text-gray-900 mb-2">Durations & Float (Days)</h3>
-              <div className="grid grid-cols-3 gap-2 text-xs">
-                <div>
-                  <span className="font-medium text-gray-500">Original:</span>
-                  <div className="text-gray-900">{hoursToWorkingDays(activity.original_duration_hours, hoursPerDay)}d</div>
-                </div>
-                <div>
-                  <span className="font-medium text-gray-500">Remaining:</span>
-                  <div className="text-gray-900">{hoursToWorkingDays(activity.remaining_duration_hours, hoursPerDay)}d</div>
-                </div>
-                <div>
-                  <span className="font-medium text-gray-500">Actual:</span>
-                  <div className="text-gray-900">{hoursToWorkingDays(activity.actual_duration_hours, hoursPerDay)}d</div>
-                </div>
-                <div>
-                  <span className="font-medium text-gray-500">At Completion:</span>
-                  <div className="text-gray-900">{hoursToWorkingDays(activity.at_completion_duration_hours, hoursPerDay)}d</div>
-                </div>
-                <div>
-                  <span className="font-medium text-gray-500">Total Float:</span>
-                  <div className="text-gray-900">{hoursToWorkingDays(activity.total_float_hours, hoursPerDay)}d</div>
-                </div>
-                <div>
-                  <span className="font-medium text-gray-500">Free Float:</span>
-                  <div className="text-gray-900">{hoursToWorkingDays(activity.free_float_hours, hoursPerDay)}d</div>
-                </div>
-              </div>
+            <div className="col-start-3"></div>
+            <div className="col-start-4"></div>
+            <label className="text-gray-500">Orig Dur</label>
+            <div className="text-gray-900 border-b border-gray-300 text-right tabular-nums">
+              {hoursToWorkingDays(activity.original_duration_hours, hoursPerDay)}
             </div>
 
-            <div className="border-t pt-4">
-              <h3 className="text-sm font-semibold text-gray-900 mb-3">% Complete</h3>
-              <div className="grid grid-cols-3 gap-4 text-xs">
-                <div>
-                  <span className="font-medium text-gray-500">Physical:</span>
-                  <div className="text-gray-900">{activity.physical_percent_complete || 0}%</div>
-                </div>
-                <div>
-                  <span className="font-medium text-gray-500">Duration:</span>
-                  <div className="text-gray-900">{activity.duration_percent_complete || 0}%</div>
-                </div>
-                <div>
-                  <span className="font-medium text-gray-500">Units:</span>
-                  <div className="text-gray-900">{activity.units_percent_complete || 0}%</div>
-                </div>
-              </div>
+            <div className="col-start-1"></div>
+            <div className="col-start-2"></div>
+            <div className="col-start-3"></div>
+            <label className="text-gray-500">Act Dur</label>
+            <div className="text-gray-900 border-b border-gray-300 text-right tabular-nums">
+              {hoursToWorkingDays(activity.actual_duration_hours, hoursPerDay)}
+            </div>
+
+            <label className="text-gray-500">Pri Constraint</label>
+            <div className="text-gray-900 border-b border-gray-300">
+              {activity.original_data?.primary_constraint_type || '-'}
+            </div>
+            <label className="text-gray-500">Date</label>
+            <div className="text-gray-900 border-b border-gray-300">
+              {activity.original_data?.primary_constraint_date ? formatDate(activity.original_data.primary_constraint_date) : '-'}
+            </div>
+
+            <div className="col-start-3"></div>
+            <label className="text-gray-500">Rem Dur</label>
+            <div className="text-gray-900 border-b border-gray-300 text-right tabular-nums">
+              {hoursToWorkingDays(activity.remaining_duration_hours, hoursPerDay)}
+            </div>
+
+            <label className="text-gray-500">Sec Constraint</label>
+            <div className="text-gray-900 border-b border-gray-300">
+              {activity.original_data?.secondary_constraint_type || '-'}
+            </div>
+            <label className="text-gray-500">Date</label>
+            <div className="text-gray-900 border-b border-gray-300">
+              {activity.original_data?.secondary_constraint_date ? formatDate(activity.original_data.secondary_constraint_date) : '-'}
+            </div>
+
+            <div className="col-start-3"></div>
+            <label className="text-gray-500">At Compl</label>
+            <div className="text-gray-900 border-b border-gray-300 text-right tabular-nums">
+              {hoursToWorkingDays(activity.at_completion_duration_hours, hoursPerDay)}
             </div>
           </div>
         )}
