@@ -98,7 +98,8 @@ export default function ActivityDetailTabs({
           is_driving,
           cpm_activities!cpm_relationships_predecessor_activity_id_fkey (
             activity_id_display,
-            activity_name
+            activity_name,
+            calendar_id
           )
         `)
         .eq('successor_activity_id', activity.id)
@@ -116,7 +117,8 @@ export default function ActivityDetailTabs({
           is_driving,
           cpm_activities!cpm_relationships_successor_activity_id_fkey (
             activity_id_display,
-            activity_name
+            activity_name,
+            calendar_id
           )
         `)
         .eq('predecessor_activity_id', activity.id)
@@ -481,19 +483,21 @@ export default function ActivityDetailTabs({
                       <table className="w-full text-xs">
                         <thead className="bg-gray-50">
                           <tr>
-                            <th className="px-2 py-1 text-left font-medium text-gray-700">Activity ID</th>
+                            <th className="px-2 py-1 text-left font-medium text-gray-700 w-20">Activity ID</th>
                             <th className="px-2 py-1 text-left font-medium text-gray-700">Activity Name</th>
-                            <th className="px-2 py-1 text-left font-medium text-gray-700">Type/Lag</th>
-                            <th className="px-2 py-1 text-right font-medium text-gray-700">Rel. Free Float</th>
-                            <th className="px-2 py-1 text-center font-medium text-gray-700">Driving</th>
-                            <th className="px-2 py-1 text-center font-medium text-gray-700">Action</th>
+                            <th className="px-2 py-1 text-left font-medium text-gray-700 w-20">Type/Lag</th>
+                            <th className="px-2 py-1 text-right font-medium text-gray-700 w-24">Rel. Free Float</th>
+                            <th className="px-2 py-1 text-center font-medium text-gray-700 w-16">Driving</th>
+                            <th className="px-2 py-1 text-center font-medium text-gray-700 w-16">Action</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-200">
                           {predecessors.map((rel) => {
                             const pred = rel.cpm_activities;
                             const isTraced = tracedActivityIds.has(rel.predecessor_activity_id);
-                            const lagDays = hoursToDays(rel.lag_hours, hoursPerDay);
+                            const predCalendar = calendars.find(c => c.id === pred.calendar_id);
+                            const predHoursPerDay = predCalendar?.hours_per_day || 8;
+                            const lagDays = hoursToDays(rel.lag_hours, predHoursPerDay);
                             const typeLag = `${getRelationshipTypeLabel(rel.relationship_type)} ${lagDays}`;
                             return (
                               <tr
@@ -501,7 +505,7 @@ export default function ActivityDetailTabs({
                                 className={`${isTraced ? 'bg-orange-50' : 'hover:bg-gray-50'}`}
                               >
                                 <td className="px-2 py-1">{pred.activity_id_display}</td>
-                                <td className="px-2 py-1 truncate max-w-[150px]" title={pred.activity_name}>{pred.activity_name}</td>
+                                <td className="px-2 py-1 truncate" title={pred.activity_name}>{pred.activity_name}</td>
                                 <td className="px-2 py-1 tabular-nums">{typeLag}</td>
                                 <td className="px-2 py-1 tabular-nums text-right">{hoursToDays(rel.relationship_float_hours, hoursPerDay)}</td>
                                 <td className="px-2 py-1 text-center">
@@ -540,19 +544,21 @@ export default function ActivityDetailTabs({
                       <table className="w-full text-xs">
                         <thead className="bg-gray-50">
                           <tr>
-                            <th className="px-2 py-1 text-left font-medium text-gray-700">Activity ID</th>
+                            <th className="px-2 py-1 text-left font-medium text-gray-700 w-20">Activity ID</th>
                             <th className="px-2 py-1 text-left font-medium text-gray-700">Activity Name</th>
-                            <th className="px-2 py-1 text-left font-medium text-gray-700">Type/Lag</th>
-                            <th className="px-2 py-1 text-right font-medium text-gray-700">Rel. Free Float</th>
-                            <th className="px-2 py-1 text-center font-medium text-gray-700">Driving</th>
-                            <th className="px-2 py-1 text-center font-medium text-gray-700">Action</th>
+                            <th className="px-2 py-1 text-left font-medium text-gray-700 w-20">Type/Lag</th>
+                            <th className="px-2 py-1 text-right font-medium text-gray-700 w-24">Rel. Free Float</th>
+                            <th className="px-2 py-1 text-center font-medium text-gray-700 w-16">Driving</th>
+                            <th className="px-2 py-1 text-center font-medium text-gray-700 w-16">Action</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-200">
                           {successors.map((rel) => {
                             const succ = rel.cpm_activities;
                             const isTraced = tracedActivityIds.has(rel.successor_activity_id);
-                            const lagDays = hoursToDays(rel.lag_hours, hoursPerDay);
+                            const succCalendar = calendars.find(c => c.id === succ.calendar_id);
+                            const succHoursPerDay = succCalendar?.hours_per_day || 8;
+                            const lagDays = hoursToDays(rel.lag_hours, succHoursPerDay);
                             const typeLag = `${getRelationshipTypeLabel(rel.relationship_type)} ${lagDays}`;
                             return (
                               <tr
@@ -560,9 +566,9 @@ export default function ActivityDetailTabs({
                                 className={`${isTraced ? 'bg-orange-50' : 'hover:bg-gray-50'}`}
                               >
                                 <td className="px-2 py-1">{succ.activity_id_display}</td>
-                                <td className="px-2 py-1 truncate max-w-[150px]" title={succ.activity_name}>{succ.activity_name}</td>
+                                <td className="px-2 py-1 truncate" title={succ.activity_name}>{succ.activity_name}</td>
                                 <td className="px-2 py-1 tabular-nums">{typeLag}</td>
-                                <td className="px-2 py-1 tabular-nums text-right">{hoursToDays(rel.relationship_float_hours, hoursPerDay)}</td>
+                                <td className="px-2 py-1 tabular-nums text-right">{hoursToDays(rel.relationship_float_hours, succHoursPerDay)}</td>
                                 <td className="px-2 py-1 text-center">
                                   <input
                                     type="checkbox"
