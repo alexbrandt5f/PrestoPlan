@@ -405,7 +405,7 @@ export default function ActivityTableAdvanced({
                       className={`w-4 h-4 text-gray-600 transition-transform ${isCollapsed ? '' : 'transform rotate-90'}`}
                     />
                     <span className={`${textSizeClass} text-gray-900`}>
-                      {item.groupLabel} ({item.activities?.length || 0})
+                      {item.groupLabel} ({(item as any).totalActivities ?? item.activities?.length ?? 0})
                     </span>
                   </div>
                 </div>
