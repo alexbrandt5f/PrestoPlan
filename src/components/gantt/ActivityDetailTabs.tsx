@@ -93,7 +93,7 @@ export default function ActivityDetailTabs({
           predecessor_activity_id,
           successor_activity_id,
           relationship_type,
-          relationship_lag_hours,
+          lag_hours,
           is_driving,
           cpm_activities!cpm_relationships_predecessor_activity_id_fkey (
             activity_id_display,
@@ -110,7 +110,7 @@ export default function ActivityDetailTabs({
           predecessor_activity_id,
           successor_activity_id,
           relationship_type,
-          relationship_lag_hours,
+          lag_hours,
           is_driving,
           cpm_activities!cpm_relationships_successor_activity_id_fkey (
             activity_id_display,
@@ -499,7 +499,7 @@ export default function ActivityDetailTabs({
                                 <td className="px-3 py-2">{pred.activity_id_display}</td>
                                 <td className="px-3 py-2">{pred.activity_name}</td>
                                 <td className="px-3 py-2">{getRelationshipTypeLabel(rel.relationship_type)}</td>
-                                <td className="px-3 py-2 tabular-nums">{hoursToDays(rel.relationship_lag_hours, hoursPerDay)}</td>
+                                <td className="px-3 py-2 tabular-nums">{hoursToDays(rel.lag_hours, hoursPerDay)}</td>
                                 <td className="px-3 py-2 text-center">
                                   {rel.is_driving && <Check className="w-4 h-4 text-green-600 inline" />}
                                 </td>
@@ -551,7 +551,7 @@ export default function ActivityDetailTabs({
                                 <td className="px-3 py-2">{succ.activity_id_display}</td>
                                 <td className="px-3 py-2">{succ.activity_name}</td>
                                 <td className="px-3 py-2">{getRelationshipTypeLabel(rel.relationship_type)}</td>
-                                <td className="px-3 py-2 tabular-nums">{hoursToDays(rel.relationship_lag_hours, hoursPerDay)}</td>
+                                <td className="px-3 py-2 tabular-nums">{hoursToDays(rel.lag_hours, hoursPerDay)}</td>
                                 <td className="px-3 py-2 text-center">
                                   {rel.is_driving && <Check className="w-4 h-4 text-green-600 inline" />}
                                 </td>
