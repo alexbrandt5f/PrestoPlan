@@ -1,8 +1,8 @@
 export function hoursToWorkingDays(hours: number | null, hoursPerDay: number): string {
   if (hours === null || hours === undefined) return '-';
-  if (hours === 0) return '0';
+  if (hours === 0) return '0d';
   const days = hours / hoursPerDay;
-  return days.toFixed(1);
+  return `${days.toFixed(1)}d`;
 }
 
 export function formatDate(dateString: string | null): string {
