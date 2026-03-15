@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { hoursToWorkingDays, hoursToDays, formatDate } from '../../lib/dateUtils';
-import { Loader2, Check } from 'lucide-react';
+import { Loader2, Check, ArrowRight } from 'lucide-react';
 
 interface Activity {
   id: string;
@@ -484,6 +484,7 @@ export default function ActivityDetailTabs({
                             <th className="px-3 py-2 text-left font-medium text-gray-700">Type</th>
                             <th className="px-3 py-2 text-left font-medium text-gray-700">Lag</th>
                             <th className="px-3 py-2 text-center font-medium text-gray-700">Driving</th>
+                            <th className="px-3 py-2 text-center font-medium text-gray-700">Action</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-200">
@@ -493,15 +494,24 @@ export default function ActivityDetailTabs({
                             return (
                               <tr
                                 key={rel.id}
-                                className={`cursor-pointer hover:bg-blue-50 ${isTraced ? 'bg-orange-50' : ''}`}
-                                onClick={() => handleRelationshipClick(rel.predecessor_activity_id)}
+                                className={`${isTraced ? 'bg-orange-50' : 'hover:bg-gray-50'}`}
                               >
                                 <td className="px-3 py-2">{pred.activity_id_display}</td>
                                 <td className="px-3 py-2">{pred.activity_name}</td>
                                 <td className="px-3 py-2">{getRelationshipTypeLabel(rel.relationship_type)}</td>
-                                <td className="px-3 py-2">{hoursToDays(rel.relationship_lag_hours, hoursPerDay)}</td>
+                                <td className="px-3 py-2 tabular-nums">{hoursToDays(rel.relationship_lag_hours, hoursPerDay)}</td>
                                 <td className="px-3 py-2 text-center">
                                   {rel.is_driving && <Check className="w-4 h-4 text-green-600 inline" />}
+                                </td>
+                                <td className="px-3 py-2 text-center">
+                                  <button
+                                    onClick={() => handleRelationshipClick(rel.predecessor_activity_id)}
+                                    className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded transition-colors"
+                                    title="Go to this activity"
+                                  >
+                                    Go To
+                                    <ArrowRight className="w-3 h-3" />
+                                  </button>
                                 </td>
                               </tr>
                             );
@@ -526,6 +536,7 @@ export default function ActivityDetailTabs({
                             <th className="px-3 py-2 text-left font-medium text-gray-700">Type</th>
                             <th className="px-3 py-2 text-left font-medium text-gray-700">Lag</th>
                             <th className="px-3 py-2 text-center font-medium text-gray-700">Driving</th>
+                            <th className="px-3 py-2 text-center font-medium text-gray-700">Action</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-200">
@@ -535,15 +546,24 @@ export default function ActivityDetailTabs({
                             return (
                               <tr
                                 key={rel.id}
-                                className={`cursor-pointer hover:bg-blue-50 ${isTraced ? 'bg-orange-50' : ''}`}
-                                onClick={() => handleRelationshipClick(rel.successor_activity_id)}
+                                className={`${isTraced ? 'bg-orange-50' : 'hover:bg-gray-50'}`}
                               >
                                 <td className="px-3 py-2">{succ.activity_id_display}</td>
                                 <td className="px-3 py-2">{succ.activity_name}</td>
                                 <td className="px-3 py-2">{getRelationshipTypeLabel(rel.relationship_type)}</td>
-                                <td className="px-3 py-2">{hoursToDays(rel.relationship_lag_hours, hoursPerDay)}</td>
+                                <td className="px-3 py-2 tabular-nums">{hoursToDays(rel.relationship_lag_hours, hoursPerDay)}</td>
                                 <td className="px-3 py-2 text-center">
                                   {rel.is_driving && <Check className="w-4 h-4 text-green-600 inline" />}
+                                </td>
+                                <td className="px-3 py-2 text-center">
+                                  <button
+                                    onClick={() => handleRelationshipClick(rel.successor_activity_id)}
+                                    className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded transition-colors"
+                                    title="Go to this activity"
+                                  >
+                                    Go To
+                                    <ArrowRight className="w-3 h-3" />
+                                  </button>
                                 </td>
                               </tr>
                             );
