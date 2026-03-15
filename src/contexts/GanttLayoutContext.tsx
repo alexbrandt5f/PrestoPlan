@@ -41,9 +41,9 @@ const DEFAULT_LAYOUT: GanttLayoutState = {
   grouping: { type: 'wbs', showSummaryBars: false },
   viewSettings: {
     showFloat: false,
-    showRelationships: 'none',
-    showDrivingOnly: true,
-    timescale: 'year-month',
+    showRelationships: 'selected',
+    showDrivingOnly: false,
+    timescale: 'year-month-week',
     zoom: 1
   }
 };
