@@ -4,7 +4,7 @@ export interface ColumnDefinition {
   field: string;
   width: number;
   visible: boolean;
-  dataType: 'string' | 'number' | 'date' | 'boolean';
+  dataType: 'string' | 'number' | 'date' | 'boolean' | 'duration';
   source: 'activity' | 'code' | 'custom';
   sourceId?: string;
 }

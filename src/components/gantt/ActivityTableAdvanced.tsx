@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState, useMemo } from 'react';
 import { ChevronUp, ChevronDown, ChevronRight } from 'lucide-react';
 import { useGanttLayout } from '../../contexts/GanttLayoutContext';
-import { hoursToWorkingDays, formatDate } from '../../lib/dateUtils';
+import { hoursToWorkingDays, hoursToDays, formatDate } from '../../lib/dateUtils';
 
 interface Activity {
   id: string;
@@ -292,6 +292,12 @@ export default function ActivityTableAdvanced({
 
     if (column.dataType === 'date') {
       return formatDate(value);
+    }
+
+    if (column.dataType === 'duration') {
+      const calendar = calendarMap.get(activity.calendar_id || '');
+      const hoursPerDay = calendar?.hours_per_day || 8;
+      return hoursToDays(value, hoursPerDay);
     }
 
     if (column.dataType === 'number') {

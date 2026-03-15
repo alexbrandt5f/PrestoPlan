@@ -4,6 +4,13 @@ export function hoursToWorkingDays(hours: number | null, hoursPerDay: number): s
   return days.toFixed(1);
 }
 
+export function hoursToDays(hours: number | null, hoursPerDay: number): string {
+  if (hours === null || hours === undefined) return '-';
+  const days = hours / hoursPerDay;
+  if (days === 0) return '0';
+  return days.toFixed(1);
+}
+
 export function formatDate(dateString: string | null): string {
   if (!dateString) return '-';
   const date = new Date(dateString);

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
-import { hoursToWorkingDays, formatDate } from '../../lib/dateUtils';
+import { hoursToWorkingDays, hoursToDays, formatDate } from '../../lib/dateUtils';
 import { Loader2, Check } from 'lucide-react';
 
 interface Activity {
@@ -336,13 +336,13 @@ export default function ActivityDetailTabs({
                 <div>
                   <div className="text-gray-600 text-xs">Total Float</div>
                   <div className="text-gray-900 font-medium tabular-nums">
-                    {hoursToWorkingDays(activity.total_float_hours, hoursPerDay)}
+                    {hoursToDays(activity.total_float_hours, hoursPerDay)}
                   </div>
                 </div>
                 <div>
                   <div className="text-gray-600 text-xs">Free Float</div>
                   <div className="text-gray-900 font-medium tabular-nums">
-                    {hoursToWorkingDays(activity.free_float_hours, hoursPerDay)}
+                    {hoursToDays(activity.free_float_hours, hoursPerDay)}
                   </div>
                 </div>
               </div>
@@ -411,25 +411,25 @@ export default function ActivityDetailTabs({
                 <div>
                   <div className="text-gray-600 text-xs">Orig Dur</div>
                   <div className="text-gray-900 font-medium tabular-nums">
-                    {hoursToWorkingDays(activity.original_duration_hours, hoursPerDay)}
+                    {hoursToDays(activity.original_duration_hours, hoursPerDay)}
                   </div>
                 </div>
                 <div>
                   <div className="text-gray-600 text-xs">Rem Dur</div>
                   <div className="text-gray-900 font-medium tabular-nums">
-                    {hoursToWorkingDays(activity.remaining_duration_hours, hoursPerDay)}
+                    {hoursToDays(activity.remaining_duration_hours, hoursPerDay)}
                   </div>
                 </div>
                 <div>
                   <div className="text-gray-600 text-xs">Act Dur</div>
                   <div className="text-gray-900 font-medium tabular-nums">
-                    {hoursToWorkingDays(activity.actual_duration_hours, hoursPerDay)}
+                    {hoursToDays(activity.actual_duration_hours, hoursPerDay)}
                   </div>
                 </div>
                 <div>
                   <div className="text-gray-600 text-xs">At Compl</div>
                   <div className="text-gray-900 font-medium tabular-nums">
-                    {hoursToWorkingDays(activity.at_completion_duration_hours, hoursPerDay)}
+                    {hoursToDays(activity.at_completion_duration_hours, hoursPerDay)}
                   </div>
                 </div>
               </div>
@@ -499,7 +499,7 @@ export default function ActivityDetailTabs({
                                 <td className="px-3 py-2">{pred.activity_id_display}</td>
                                 <td className="px-3 py-2">{pred.activity_name}</td>
                                 <td className="px-3 py-2">{getRelationshipTypeLabel(rel.relationship_type)}</td>
-                                <td className="px-3 py-2">{hoursToWorkingDays(rel.relationship_lag_hours, hoursPerDay)}</td>
+                                <td className="px-3 py-2">{hoursToDays(rel.relationship_lag_hours, hoursPerDay)}</td>
                                 <td className="px-3 py-2 text-center">
                                   {rel.is_driving && <Check className="w-4 h-4 text-green-600 inline" />}
                                 </td>
@@ -541,7 +541,7 @@ export default function ActivityDetailTabs({
                                 <td className="px-3 py-2">{succ.activity_id_display}</td>
                                 <td className="px-3 py-2">{succ.activity_name}</td>
                                 <td className="px-3 py-2">{getRelationshipTypeLabel(rel.relationship_type)}</td>
-                                <td className="px-3 py-2">{hoursToWorkingDays(rel.relationship_lag_hours, hoursPerDay)}</td>
+                                <td className="px-3 py-2">{hoursToDays(rel.relationship_lag_hours, hoursPerDay)}</td>
                                 <td className="px-3 py-2 text-center">
                                   {rel.is_driving && <Check className="w-4 h-4 text-green-600 inline" />}
                                 </td>
