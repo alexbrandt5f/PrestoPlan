@@ -411,7 +411,7 @@ function GanttViewerContent() {
         return output;
       }
 
-      const wbsHierarchy: Array<{ type: 'group' | 'activity'; groupKey?: string; groupLabel?: string; activities?: Activity[]; activity?: Activity; level?: number }> = [];
+      const wbsHierarchy: Array<{ type: 'group' | 'activity'; groupKey?: string; groupLabel?: string; activities?: Activity[]; activity?: Activity; level?: number; totalActivities?: number }> = [];
 
       const wbsActivities = new Map<string, Activity[]>();
       const orphanedActivities: Activity[] = [];
@@ -431,17 +431,30 @@ function GanttViewerContent() {
         const wbs = wbsMap.get(wbsId);
         if (!wbs) return;
 
-        const activities = wbsActivities.get(wbsId) || [];
+        const directActivities = wbsActivities.get(wbsId) || [];
 
+        // Count all activities in this WBS node AND all descendant nodes
+        function countDescendantActivities(nodeId: string): number {
+          let count = (wbsActivities.get(nodeId) || []).length;
+          const childNodes = wbsArray.filter(w => w.parent_wbs_id === nodeId);
+          childNodes.forEach(child => {
+            count += countDescendantActivities(child.id);
+          });
+          return count;
+        }
+        const totalActivities = countDescendantActivities(wbsId);
+
+        // Store totalActivities on the group item so the table can display it
         wbsHierarchy.push({
           type: 'group',
           groupKey: wbsId,
           groupLabel: wbs.wbs_name,
-          activities,
-          level
+          activities: directActivities,
+          level,
+          totalActivities
         });
 
-        activities.forEach(activity => {
+        directActivities.forEach(activity => {
           wbsHierarchy.push({ type: 'activity', activity });
         });
 
