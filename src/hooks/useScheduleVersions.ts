@@ -85,6 +85,40 @@ export function useScheduleVersions(projectId: string, companyId: string) {
 
   const deleteVersion = async (versionId: string) => {
     try {
+      // Delete child tables first to avoid foreign key constraint violations.
+      // Order matters: delete the most dependent tables first, then work up.
+      const childTables = [
+        'cpm_activity_notes',
+        'cpm_code_assignments',
+        'cpm_custom_field_values',
+        'cpm_resource_assignments',
+        'cpm_relationships',
+        'cpm_activities',
+        'cpm_code_values',
+        'cpm_code_types',
+        'cpm_resources',
+        'cpm_custom_field_types',
+        'cpm_note_topics',
+        'cpm_wbs',
+        'cpm_calendars',
+        'cpm_projects',
+        'cpm_raw_tables',
+        'cpm_format_metadata',
+      ];
+
+      for (const table of childTables) {
+        const { error } = await supabase
+          .from(table)
+          .delete()
+          .eq('schedule_version_id', versionId);
+
+        // Some tables might not have data or might not exist — that's OK
+        if (error) {
+          console.warn(`Warning deleting from ${table}:`, error.message);
+        }
+      }
+
+      // Now delete the schedule version itself
       const { error: deleteError } = await supabase
         .from('schedule_versions')
         .delete()
