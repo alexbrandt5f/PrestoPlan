@@ -29,6 +29,10 @@ interface ScheduleVersion {
   data_date: string | null;
 }
 
+interface CpmProject {
+  project_name: string;
+}
+
 interface Project {
   id: string;
   settings: {
@@ -52,6 +56,7 @@ function GanttViewerContent() {
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [version, setVersion] = useState<ScheduleVersion | null>(null);
   const [project, setProject] = useState<Project | null>(null);
+  const [cpmProject, setCpmProject] = useState<CpmProject | null>(null);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [calendars, setCalendars] = useState<Calendar[]>([]);
   const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
@@ -80,7 +85,7 @@ function GanttViewerContent() {
       setLoading(true);
       setLoadingProgress(10);
 
-      const [projectRes, versionRes, calendarsRes, wbsRes] = await Promise.all([
+      const [projectRes, versionRes, calendarsRes, wbsRes, cpmProjectRes] = await Promise.all([
         supabase
           .from('projects')
           .select('id, settings')
@@ -99,7 +104,12 @@ function GanttViewerContent() {
           .from('cpm_wbs')
           .select('id, wbs_name, wbs_code, parent_wbs_id, level, sort_order')
           .eq('schedule_version_id', versionId)
-          .order('sort_order', { ascending: true })
+          .order('sort_order', { ascending: true }),
+        supabase
+          .from('cpm_projects')
+          .select('project_name')
+          .eq('schedule_version_id', versionId)
+          .maybeSingle()
       ]);
 
       setLoadingProgress(30);
@@ -107,7 +117,7 @@ function GanttViewerContent() {
       if (projectRes.error) throw projectRes.error;
       if (versionRes.error) throw versionRes.error;
       if (calendarsRes.error) throw calendarsRes.error;
-      // WBS errors are logged but don't crash — the Gantt will fall back to a flat list
+      if (cpmProjectRes.error) console.warn('CPM project query failed:', cpmProjectRes.error);
       if (wbsRes.error) console.warn('WBS query failed, grouping will fall back to flat list:', wbsRes.error);
 
       if (!versionRes.data) {
@@ -118,6 +128,7 @@ function GanttViewerContent() {
 
       setProject(projectRes.data);
       setVersion(versionRes.data);
+      setCpmProject(cpmProjectRes.data);
       setCalendars(calendarsRes.data || []);
 
       if (wbsRes.data) {
@@ -609,7 +620,14 @@ function GanttViewerContent() {
             <div className="flex items-center gap-3">
               <Calendar className="w-6 h-6 text-blue-600" />
               <div>
-                <h1 className="text-lg font-semibold text-gray-900">{version?.version_label}</h1>
+                <h1 className="text-lg font-semibold text-gray-900">
+                  {version?.version_label}
+                  {cpmProject?.project_name && (
+                    <span className="text-gray-500 font-normal ml-2">
+                      ({cpmProject.project_name})
+                    </span>
+                  )}
+                </h1>
                 <p className="text-sm text-gray-500">
                   {groupedActivities.filter(i => i.type === 'activity').length.toLocaleString()} activities
                   {backgroundLoading && <span className="ml-2 text-blue-600">(loading more...)</span>}
