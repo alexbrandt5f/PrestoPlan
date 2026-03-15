@@ -110,6 +110,24 @@ export default function GanttChartAdvanced({
     return () => window.removeEventListener('collapsed-groups-change', handleCollapsedGroupsChange);
   }, []);
 
+  useEffect(() => {
+    if (!selectedActivity || !scrollContainerRef.current) return;
+
+    const rowIndex = visibleGroupedActivities.findIndex(item =>
+      item.type === 'activity' && item.activity?.id === selectedActivity.id
+    );
+
+    if (rowIndex !== -1) {
+      const scrollTop = rowIndex * ROW_HEIGHT + HEADER_HEIGHT;
+      const containerHeight = scrollContainerRef.current.clientHeight;
+      const currentScrollTop = scrollContainerRef.current.scrollTop;
+
+      if (scrollTop < currentScrollTop || scrollTop > currentScrollTop + containerHeight - ROW_HEIGHT) {
+        scrollContainerRef.current.scrollTop = scrollTop - containerHeight / 2 + ROW_HEIGHT / 2;
+      }
+    }
+  }, [selectedActivity, visibleGroupedActivities]);
+
   const visibleGroupedActivities: Array<{ type: 'group' | 'activity'; groupKey?: string; groupLabel?: string; activities?: Activity[]; activity?: Activity; level?: number }> = useMemo(() => {
     const result: Array<{ type: 'group' | 'activity'; groupKey?: string; groupLabel?: string; activities?: Activity[]; activity?: Activity; level?: number }> = [];
     const collapsedStack: Array<{ key: string; level: number }> = [];
@@ -365,18 +383,23 @@ export default function GanttChartAdvanced({
   function handleMouseMove(e: React.MouseEvent) {
     if (isZooming) {
       const deltaX = e.clientX - zoomStart.x;
+      if (Math.abs(deltaX) > 3) {
+        setHasMoved(true);
+      }
       const zoomFactor = 1 + (deltaX / 300);
       const newZoom = Math.max(0.1, Math.min(5, zoomStart.initialZoom * zoomFactor));
       updateViewSettings({ zoom: newZoom });
-      setHasMoved(true);
       return;
     }
 
     if (isPanning) {
-      setHasMoved(true);
+      const deltaX = e.clientX - panStart.x;
+      const deltaY = e.clientY - panStart.y;
+      if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) {
+        setHasMoved(true);
+      }
       const scrollContainer = scrollContainerRef.current;
-      if (scrollContainer) {
-        const deltaX = e.clientX - panStart.x;
+      if (scrollContainer && hasMoved) {
         scrollContainer.scrollLeft = panStart.scrollLeft - deltaX;
       }
       return;
@@ -983,6 +1006,8 @@ export default function GanttChartAdvanced({
           onMouseLeave={() => {
             setTooltip(null);
             setIsPanning(false);
+            setIsZooming(false);
+            setHasMoved(false);
           }}
           onWheel={(e) => {
             if (scrollContainerRef.current) {

@@ -349,6 +349,24 @@ export default function ActivityTableAdvanced({
     };
   }, []);
 
+  useEffect(() => {
+    if (!selectedActivity || !scrollContainerRef.current) return;
+
+    const rowIndex = visibleGroupedActivities.findIndex(item =>
+      item.type === 'activity' && item.activity?.id === selectedActivity.id
+    );
+
+    if (rowIndex !== -1) {
+      const scrollTop = rowIndex * ROW_HEIGHT;
+      const containerHeight = scrollContainerRef.current.clientHeight;
+      const currentScrollTop = scrollContainerRef.current.scrollTop;
+
+      if (scrollTop < currentScrollTop || scrollTop > currentScrollTop + containerHeight - ROW_HEIGHT) {
+        scrollContainerRef.current.scrollTop = scrollTop - containerHeight / 2 + ROW_HEIGHT / 2;
+      }
+    }
+  }, [selectedActivity, visibleGroupedActivities]);
+
   function toggleGroup(groupKey: string) {
     const newCollapsed = new Set(collapsedGroups);
     if (newCollapsed.has(groupKey)) {

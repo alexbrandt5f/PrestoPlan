@@ -481,30 +481,30 @@ export default function ActivityDetailTabs({
                       <table className="w-full text-xs">
                         <thead className="bg-gray-50">
                           <tr>
-                            <th className="px-2 py-2 text-left font-medium text-gray-700">Activity ID</th>
-                            <th className="px-2 py-2 text-left font-medium text-gray-700">Activity Name</th>
-                            <th className="px-2 py-2 text-left font-medium text-gray-700">Type</th>
-                            <th className="px-2 py-2 text-right font-medium text-gray-700">Lag</th>
-                            <th className="px-2 py-2 text-right font-medium text-gray-700">Free Float</th>
-                            <th className="px-2 py-2 text-center font-medium text-gray-700">Driving</th>
-                            <th className="px-2 py-2 text-center font-medium text-gray-700">Action</th>
+                            <th className="px-2 py-1 text-left font-medium text-gray-700">Activity ID</th>
+                            <th className="px-2 py-1 text-left font-medium text-gray-700">Activity Name</th>
+                            <th className="px-2 py-1 text-left font-medium text-gray-700">Type/Lag</th>
+                            <th className="px-2 py-1 text-right font-medium text-gray-700">Rel. Free Float</th>
+                            <th className="px-2 py-1 text-center font-medium text-gray-700">Driving</th>
+                            <th className="px-2 py-1 text-center font-medium text-gray-700">Action</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-200">
                           {predecessors.map((rel) => {
                             const pred = rel.cpm_activities;
                             const isTraced = tracedActivityIds.has(rel.predecessor_activity_id);
+                            const lagDays = hoursToDays(rel.lag_hours, hoursPerDay);
+                            const typeLag = `${getRelationshipTypeLabel(rel.relationship_type)} ${lagDays}`;
                             return (
                               <tr
                                 key={rel.id}
                                 className={`${isTraced ? 'bg-orange-50' : 'hover:bg-gray-50'}`}
                               >
-                                <td className="px-2 py-2">{pred.activity_id_display}</td>
-                                <td className="px-2 py-2 truncate max-w-[150px]" title={pred.activity_name}>{pred.activity_name}</td>
-                                <td className="px-2 py-2">{getRelationshipTypeLabel(rel.relationship_type)}</td>
-                                <td className="px-2 py-2 tabular-nums text-right">{hoursToDays(rel.lag_hours, hoursPerDay)}</td>
-                                <td className="px-2 py-2 tabular-nums text-right">{hoursToDays(rel.relationship_float_hours, hoursPerDay)}</td>
-                                <td className="px-2 py-2 text-center">
+                                <td className="px-2 py-1">{pred.activity_id_display}</td>
+                                <td className="px-2 py-1 truncate max-w-[150px]" title={pred.activity_name}>{pred.activity_name}</td>
+                                <td className="px-2 py-1 tabular-nums">{typeLag}</td>
+                                <td className="px-2 py-1 tabular-nums text-right">{hoursToDays(rel.relationship_float_hours, hoursPerDay)}</td>
+                                <td className="px-2 py-1 text-center">
                                   <input
                                     type="checkbox"
                                     checked={rel.is_driving || false}
@@ -512,7 +512,7 @@ export default function ActivityDetailTabs({
                                     className="w-4 h-4 text-green-600 bg-gray-100 border-gray-300 rounded focus:ring-green-500 pointer-events-none"
                                   />
                                 </td>
-                                <td className="px-2 py-2 text-center">
+                                <td className="px-2 py-1 text-center">
                                   <button
                                     onClick={() => handleRelationshipClick(rel.predecessor_activity_id)}
                                     className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded transition-colors"
@@ -540,30 +540,30 @@ export default function ActivityDetailTabs({
                       <table className="w-full text-xs">
                         <thead className="bg-gray-50">
                           <tr>
-                            <th className="px-2 py-2 text-left font-medium text-gray-700">Activity ID</th>
-                            <th className="px-2 py-2 text-left font-medium text-gray-700">Activity Name</th>
-                            <th className="px-2 py-2 text-left font-medium text-gray-700">Type</th>
-                            <th className="px-2 py-2 text-right font-medium text-gray-700">Lag</th>
-                            <th className="px-2 py-2 text-right font-medium text-gray-700">Free Float</th>
-                            <th className="px-2 py-2 text-center font-medium text-gray-700">Driving</th>
-                            <th className="px-2 py-2 text-center font-medium text-gray-700">Action</th>
+                            <th className="px-2 py-1 text-left font-medium text-gray-700">Activity ID</th>
+                            <th className="px-2 py-1 text-left font-medium text-gray-700">Activity Name</th>
+                            <th className="px-2 py-1 text-left font-medium text-gray-700">Type/Lag</th>
+                            <th className="px-2 py-1 text-right font-medium text-gray-700">Rel. Free Float</th>
+                            <th className="px-2 py-1 text-center font-medium text-gray-700">Driving</th>
+                            <th className="px-2 py-1 text-center font-medium text-gray-700">Action</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-200">
                           {successors.map((rel) => {
                             const succ = rel.cpm_activities;
                             const isTraced = tracedActivityIds.has(rel.successor_activity_id);
+                            const lagDays = hoursToDays(rel.lag_hours, hoursPerDay);
+                            const typeLag = `${getRelationshipTypeLabel(rel.relationship_type)} ${lagDays}`;
                             return (
                               <tr
                                 key={rel.id}
                                 className={`${isTraced ? 'bg-orange-50' : 'hover:bg-gray-50'}`}
                               >
-                                <td className="px-2 py-2">{succ.activity_id_display}</td>
-                                <td className="px-2 py-2 truncate max-w-[150px]" title={succ.activity_name}>{succ.activity_name}</td>
-                                <td className="px-2 py-2">{getRelationshipTypeLabel(rel.relationship_type)}</td>
-                                <td className="px-2 py-2 tabular-nums text-right">{hoursToDays(rel.lag_hours, hoursPerDay)}</td>
-                                <td className="px-2 py-2 tabular-nums text-right">{hoursToDays(rel.relationship_float_hours, hoursPerDay)}</td>
-                                <td className="px-2 py-2 text-center">
+                                <td className="px-2 py-1">{succ.activity_id_display}</td>
+                                <td className="px-2 py-1 truncate max-w-[150px]" title={succ.activity_name}>{succ.activity_name}</td>
+                                <td className="px-2 py-1 tabular-nums">{typeLag}</td>
+                                <td className="px-2 py-1 tabular-nums text-right">{hoursToDays(rel.relationship_float_hours, hoursPerDay)}</td>
+                                <td className="px-2 py-1 text-center">
                                   <input
                                     type="checkbox"
                                     checked={rel.is_driving || false}
@@ -571,7 +571,7 @@ export default function ActivityDetailTabs({
                                     className="w-4 h-4 text-green-600 bg-gray-100 border-gray-300 rounded focus:ring-green-500 pointer-events-none"
                                   />
                                 </td>
-                                <td className="px-2 py-2 text-center">
+                                <td className="px-2 py-1 text-center">
                                   <button
                                     onClick={() => handleRelationshipClick(rel.successor_activity_id)}
                                     className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded transition-colors"
