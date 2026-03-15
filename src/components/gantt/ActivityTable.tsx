@@ -189,7 +189,7 @@ export default function ActivityTable({ activities, calendars, selectedActivity,
                 onDoubleClick={() => handleColumnHeaderDoubleClick('original_duration_hours')}
               >
                 <div className="flex items-center justify-end">
-                  <span>Orig Dur</span>
+                  <span>Orig Dur (d)</span>
                   {sortColumn === 'original_duration_hours' && (
                     sortDirection === 'asc' ? <ChevronUp className="w-3 h-3 ml-1" /> : <ChevronDown className="w-3 h-3 ml-1" />
                   )}
@@ -225,7 +225,7 @@ export default function ActivityTable({ activities, calendars, selectedActivity,
                 onDoubleClick={() => handleColumnHeaderDoubleClick('total_float_hours')}
               >
                 <div className="flex items-center justify-end">
-                  <span>Total Float</span>
+                  <span>Total Float (d)</span>
                   {sortColumn === 'total_float_hours' && (
                     sortDirection === 'asc' ? <ChevronUp className="w-3 h-3 ml-1" /> : <ChevronDown className="w-3 h-3 ml-1" />
                   )}

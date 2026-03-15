@@ -296,11 +296,7 @@ export default function ActivityTableAdvanced({
     }
 
     if (column.dataType === 'number') {
-      if (column.field.endsWith('_hours')) {
-        return value.toString();
-      }
-
-      if (column.field.endsWith('_days') || column.field.includes('duration') || column.field.includes('float') || column.field.includes('lag')) {
+      if (column.field.endsWith('_hours') || column.field.endsWith('_days') || column.field.includes('duration') || column.field.includes('float') || column.field.includes('lag')) {
         const calendar = calendarMap.get(activity.calendar_id || '');
         const hoursPerDay = calendar?.hours_per_day || 8;
         return hoursToWorkingDays(value, hoursPerDay);
