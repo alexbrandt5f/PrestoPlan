@@ -301,108 +301,106 @@ export default function ActivityDetailTabs({
         </button>
       </div>
 
-      <div className="flex-1 overflow-auto p-3">
+      <div className="flex-1 overflow-auto p-2">
         {activeTab === 'general' && (
-          <div className="grid grid-cols-[auto_1fr_auto_1fr] gap-x-3 gap-y-2 text-xs">
-            <label className="text-gray-500">ID</label>
-            <div className="text-gray-900 border-b border-gray-300">{activity.activity_id_display}</div>
-            <label className="text-gray-500">Name</label>
-            <div className="text-gray-900 border-b border-gray-300">{activity.activity_name}</div>
-
-            <div className="col-start-3"></div>
-            <div className="col-start-4"></div>
-            <div className="col-start-3"></div>
-            <div className="col-start-4"></div>
-
-            <label className="text-gray-500">Criticality</label>
-            <div className="text-gray-900 border-b border-gray-300">
+          <div className="grid grid-cols-[auto_minmax(100px,1fr)_auto_minmax(100px,1fr)_auto_minmax(80px,1fr)] gap-x-4 gap-y-1 text-xs leading-tight">
+            {/* Row 1 */}
+            <div className="text-gray-600">ID</div>
+            <div className="border-b border-gray-400">{activity.activity_id_display}</div>
+            <div className="text-gray-600">Name</div>
+            <div className="border-b border-gray-400 col-span-2">{activity.activity_name}</div>
+            <div className="text-gray-600 text-right">Criticality</div>
+            <div className="border-b border-gray-400 text-right">
               {activity.is_critical ? 'Critical' : 'Non-Critical'}
             </div>
 
-            <label className="text-gray-500">Total Float</label>
-            <div className="text-gray-900 border-b border-gray-300 text-right tabular-nums">
+            {/* Row 2 */}
+            <div></div>
+            <div></div>
+            <div></div>
+            <div></div>
+            <div className="text-gray-600 text-right">Total Float</div>
+            <div className="border-b border-gray-400 text-right tabular-nums">
               {hoursToWorkingDays(activity.total_float_hours, hoursPerDay)}
             </div>
 
-            <div className="col-start-3"></div>
-            <div className="col-start-4"></div>
-
-            <label className="text-gray-500">Free Float</label>
-            <div className="text-gray-900 border-b border-gray-300 text-right tabular-nums">
+            {/* Row 3 */}
+            <div></div>
+            <div></div>
+            <div></div>
+            <div></div>
+            <div className="text-gray-600 text-right">Free Float</div>
+            <div className="border-b border-gray-400 text-right tabular-nums">
               {hoursToWorkingDays(activity.free_float_hours, hoursPerDay)}
             </div>
 
-            <label className="text-gray-500">Start</label>
-            <div className="text-gray-900 border-b border-gray-300">{formatDate(activity.early_start)}</div>
-            <label className="text-gray-500">Finish</label>
-            <div className="text-gray-900 border-b border-gray-300">{formatDate(activity.early_finish)}</div>
-
-            <label className="text-gray-500">Expected Finish</label>
-            <div className="text-gray-900 border-b border-gray-300">
+            {/* Row 4 */}
+            <div className="text-gray-600">Start</div>
+            <div className="border-b border-gray-400">{formatDate(activity.early_start)}</div>
+            <div className="text-gray-600">Finish</div>
+            <div className="border-b border-gray-400">{formatDate(activity.early_finish)}</div>
+            <div className="text-gray-600 text-right">Expected Finish</div>
+            <div className="border-b border-gray-400 text-right">
               {formatDate(activity.actual_finish || activity.early_finish)}
             </div>
-            <label className="text-gray-500">Calendar</label>
-            <div className="text-gray-900 border-b border-gray-300">{calendar?.calendar_name || '-'}</div>
 
-            <label className="text-gray-500">Base Start</label>
-            <div className="text-gray-900 border-b border-gray-300">{formatDate(activity.early_start)}</div>
-            <label className="text-gray-500">Base Finish</label>
-            <div className="text-gray-900 border-b border-gray-300">{formatDate(activity.early_finish)}</div>
+            {/* Row 5 */}
+            <div className="text-gray-600">Base Start</div>
+            <div className="border-b border-gray-400">{formatDate(activity.early_start)}</div>
+            <div className="text-gray-600">Base Finish</div>
+            <div className="border-b border-gray-400">{formatDate(activity.early_finish)}</div>
+            <div className="text-gray-600 text-right">Calendar</div>
+            <div className="border-b border-gray-400 text-right">{calendar?.calendar_name || '-'}</div>
 
-            <div className="col-start-3"></div>
-            <div className="col-start-4"></div>
-
-            <label className="text-gray-500">Act % Cmpl</label>
-            <div className="text-gray-900 border-b border-gray-300 text-right tabular-nums">
+            {/* Row 6 */}
+            <div className="text-gray-600">Act % Cmpl</div>
+            <div className="border-b border-gray-400 text-right tabular-nums">
               {activity.physical_percent_complete !== null ? `${activity.physical_percent_complete.toFixed(1)}%` : '-'}
             </div>
-            <label className="text-gray-500">Base % Cmpl</label>
-            <div className="text-gray-900 border-b border-gray-300 text-right tabular-nums">
+            <div className="text-gray-600">Base % Cmpl</div>
+            <div className="border-b border-gray-400 text-right tabular-nums">
               {activity.duration_percent_complete !== null ? `${activity.duration_percent_complete.toFixed(1)}%` : '-'}
             </div>
-
-            <div className="col-start-3"></div>
-            <div className="col-start-4"></div>
-            <label className="text-gray-500">Orig Dur</label>
-            <div className="text-gray-900 border-b border-gray-300 text-right tabular-nums">
+            <div className="text-gray-600 text-right">Orig Dur</div>
+            <div className="border-b border-gray-400 text-right tabular-nums">
               {hoursToWorkingDays(activity.original_duration_hours, hoursPerDay)}
             </div>
 
-            <div className="col-start-1"></div>
-            <div className="col-start-2"></div>
-            <div className="col-start-3"></div>
-            <label className="text-gray-500">Act Dur</label>
-            <div className="text-gray-900 border-b border-gray-300 text-right tabular-nums">
+            {/* Row 7 */}
+            <div></div>
+            <div></div>
+            <div></div>
+            <div></div>
+            <div className="text-gray-600 text-right">Act Dur</div>
+            <div className="border-b border-gray-400 text-right tabular-nums">
               {hoursToWorkingDays(activity.actual_duration_hours, hoursPerDay)}
             </div>
 
-            <label className="text-gray-500">Pri Constraint</label>
-            <div className="text-gray-900 border-b border-gray-300">
+            {/* Row 8 */}
+            <div className="text-gray-600">Pri Constraint</div>
+            <div className="border-b border-gray-400">
               {activity.original_data?.primary_constraint_type || '-'}
             </div>
-            <label className="text-gray-500">Date</label>
-            <div className="text-gray-900 border-b border-gray-300">
+            <div className="text-gray-600">Date</div>
+            <div className="border-b border-gray-400">
               {activity.original_data?.primary_constraint_date ? formatDate(activity.original_data.primary_constraint_date) : '-'}
             </div>
-
-            <div className="col-start-3"></div>
-            <label className="text-gray-500">Rem Dur</label>
-            <div className="text-gray-900 border-b border-gray-300 text-right tabular-nums">
+            <div className="text-gray-600 text-right">Rem Dur</div>
+            <div className="border-b border-gray-400 text-right tabular-nums">
               {hoursToWorkingDays(activity.remaining_duration_hours, hoursPerDay)}
             </div>
 
-            <label className="text-gray-500">Sec Constraint</label>
-            <div className="text-gray-900 border-b border-gray-300">
+            {/* Row 9 */}
+            <div className="text-gray-600">Sec Constraint</div>
+            <div className="border-b border-gray-400">
               {activity.original_data?.secondary_constraint_type || '-'}
             </div>
-            <label className="text-gray-500">Date</label>
-            <div className="text-gray-900 border-b border-gray-300">
+            <div className="text-gray-600">Date</div>
+            <div className="border-b border-gray-400">
               {activity.original_data?.secondary_constraint_date ? formatDate(activity.original_data.secondary_constraint_date) : '-'}
             </div>
-
-            <div className="col-start-3"></div>
-            <label className="text-gray-500">At Compl</label>
-            <div className="text-gray-900 border-b border-gray-300 text-right tabular-nums">
+            <div className="text-gray-600 text-right">At Compl</div>
+            <div className="border-b border-gray-400 text-right tabular-nums">
               {hoursToWorkingDays(activity.at_completion_duration_hours, hoursPerDay)}
             </div>
           </div>
