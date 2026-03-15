@@ -125,8 +125,20 @@ export default function ActivityDetailTabs({
         .eq('schedule_version_id', scheduleVersionId)
     ]);
 
-    setPredecessors(predRes.data || []);
-    setSuccessors(succRes.data || []);
+    const sortedPreds = (predRes.data || []).sort((a, b) => {
+      const aFloat = a.relationship_float_hours ?? Infinity;
+      const bFloat = b.relationship_float_hours ?? Infinity;
+      return aFloat - bFloat;
+    });
+
+    const sortedSuccs = (succRes.data || []).sort((a, b) => {
+      const aFloat = a.relationship_float_hours ?? Infinity;
+      const bFloat = b.relationship_float_hours ?? Infinity;
+      return aFloat - bFloat;
+    });
+
+    setPredecessors(sortedPreds);
+    setSuccessors(sortedSuccs);
   }
 
   async function loadCodes() {
@@ -485,10 +497,10 @@ export default function ActivityDetailTabs({
                           <tr>
                             <th className="px-2 py-1 text-left font-medium text-gray-700 w-20">Activity ID</th>
                             <th className="px-2 py-1 text-left font-medium text-gray-700">Activity Name</th>
-                            <th className="px-2 py-1 text-left font-medium text-gray-700 w-20">Type/Lag</th>
-                            <th className="px-2 py-1 text-right font-medium text-gray-700 w-24">Rel. Free Float</th>
+                            <th className="px-2 py-1 text-left font-medium text-gray-700 w-16">Type/Lag</th>
+                            <th className="px-2 py-1 text-right font-medium text-gray-700 w-16">Rel. Gap</th>
                             <th className="px-2 py-1 text-center font-medium text-gray-700 w-16">Driving</th>
-                            <th className="px-2 py-1 text-center font-medium text-gray-700 w-16">Action</th>
+                            <th className="px-2 py-1 text-center font-medium text-gray-700 w-20">Action</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-200">
@@ -519,7 +531,7 @@ export default function ActivityDetailTabs({
                                 <td className="px-2 py-1 text-center">
                                   <button
                                     onClick={() => handleRelationshipClick(rel.predecessor_activity_id)}
-                                    className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded transition-colors"
+                                    className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded transition-colors whitespace-nowrap"
                                     title="Go to this activity"
                                   >
                                     Go To
@@ -546,10 +558,10 @@ export default function ActivityDetailTabs({
                           <tr>
                             <th className="px-2 py-1 text-left font-medium text-gray-700 w-20">Activity ID</th>
                             <th className="px-2 py-1 text-left font-medium text-gray-700">Activity Name</th>
-                            <th className="px-2 py-1 text-left font-medium text-gray-700 w-20">Type/Lag</th>
-                            <th className="px-2 py-1 text-right font-medium text-gray-700 w-24">Rel. Free Float</th>
+                            <th className="px-2 py-1 text-left font-medium text-gray-700 w-16">Type/Lag</th>
+                            <th className="px-2 py-1 text-right font-medium text-gray-700 w-16">Rel. Gap</th>
                             <th className="px-2 py-1 text-center font-medium text-gray-700 w-16">Driving</th>
-                            <th className="px-2 py-1 text-center font-medium text-gray-700 w-16">Action</th>
+                            <th className="px-2 py-1 text-center font-medium text-gray-700 w-20">Action</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-200">
@@ -580,7 +592,7 @@ export default function ActivityDetailTabs({
                                 <td className="px-2 py-1 text-center">
                                   <button
                                     onClick={() => handleRelationshipClick(rel.successor_activity_id)}
-                                    className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded transition-colors"
+                                    className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded transition-colors whitespace-nowrap"
                                     title="Go to this activity"
                                   >
                                     Go To
