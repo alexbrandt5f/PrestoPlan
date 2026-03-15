@@ -345,6 +345,8 @@ export default function ActivityTableAdvanced({
               const sortInfo = layout.sorts.find(s => s.field === column.field);
               const sortIndex = layout.sorts.findIndex(s => s.field === column.field);
 
+              const isNumericColumn = column.dataType === 'number' || column.dataType === 'duration';
+
               return (
                 <div
                   key={column.id}
@@ -352,7 +354,7 @@ export default function ActivityTableAdvanced({
                   style={{ width: column.width, height: HEADER_HEIGHT }}
                 >
                   <div
-                    className="flex-1 flex items-center gap-1 cursor-pointer hover:bg-gray-100 -mx-3 px-3 h-full"
+                    className={`flex-1 flex items-center gap-1 cursor-pointer hover:bg-gray-100 -mx-3 px-3 h-full ${isNumericColumn ? 'justify-end' : ''}`}
                     onDoubleClick={(e) => handleColumnHeaderClick(column.field, e.shiftKey)}
                   >
                     <span className="text-xs font-semibold text-gray-700 truncate">
@@ -426,17 +428,20 @@ export default function ActivityTableAdvanced({
                 style={{ height: ROW_HEIGHT, minHeight: ROW_HEIGHT, maxHeight: ROW_HEIGHT, boxSizing: 'border-box', overflow: 'hidden' }}
                 onMouseDown={() => onSelectActivity(activity)}
               >
-                {visibleColumns.map(column => (
-                  <div
-                    key={column.id}
-                    className="border-r border-gray-100 px-3 text-xs flex items-center overflow-hidden"
-                    style={{ width: column.width }}
-                  >
-                    <span className="truncate">
-                      {formatValue(activity[column.field], column, activity)}
-                    </span>
-                  </div>
-                ))}
+                {visibleColumns.map(column => {
+                  const isNumericColumn = column.dataType === 'number' || column.dataType === 'duration';
+                  return (
+                    <div
+                      key={column.id}
+                      className={`border-r border-gray-100 px-3 text-xs flex items-center overflow-hidden ${isNumericColumn ? 'justify-end' : ''}`}
+                      style={{ width: column.width }}
+                    >
+                      <span className="truncate">
+                        {formatValue(activity[column.field], column, activity)}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             );
           })}
