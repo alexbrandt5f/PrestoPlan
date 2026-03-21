@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
-import { Pin, PinOff, ChevronRight, ChevronDown, X } from 'lucide-react';
+import { Pin, PinOff, ChevronRight, ChevronDown, X, RotateCcw } from 'lucide-react';
 import { useGanttLayout } from '../../contexts/GanttLayoutContext';
 import { supabase } from '../../lib/supabase';
 
@@ -313,145 +313,163 @@ export function QuickFilterPanel({
     );
   }
 
+  const hasAnyFilter = qf.selectedWbsIds.length > 0 ||
+    qf.activityStatus !== 'all' ||
+    qf.criticality !== 'all' ||
+    qf.timeframe !== 'all' ||
+    qf.activityCodeTypeId !== null ||
+    qf.selectedCodeValueIds.length > 0;
+
+  function clearAllFilters() {
+    updateQuickFilters({
+      selectedWbsIds: [],
+      activityStatus: 'all',
+      criticality: 'all',
+      timeframe: 'all',
+      activityCodeTypeId: null,
+      selectedCodeValueIds: [],
+    });
+  }
+
   if (!isOpen && !isPinned) return null;
+
+  /** Compact pill button for radio-style options */
+  const pillClass = (active: boolean) =>
+    `px-2.5 py-1 text-[11px] rounded-full cursor-pointer transition-colors whitespace-nowrap ${
+      active
+        ? 'bg-blue-600 text-white font-medium'
+        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+    }`;
+
+  /** Disabled pill */
+  const pillDisabledClass = 'px-2.5 py-1 text-[11px] rounded-full bg-gray-50 text-gray-300 cursor-not-allowed whitespace-nowrap';
 
   return (
     <div
       ref={panelRef}
-      className={`fixed top-0 left-0 h-full bg-white shadow-lg z-30 flex flex-col border-r border-gray-300 transition-transform duration-200 ${
+      className={`fixed top-0 left-0 h-full bg-white shadow-xl z-30 flex flex-col border-r border-gray-200 transition-transform duration-200 ${
         isOpen || isPinned ? 'translate-x-0' : '-translate-x-full'
       }`}
-      style={{ width: '280px' }}
+      style={{ width: '272px' }}
     >
-      <div className="flex items-center justify-between p-2 border-b bg-gray-50">
-        <span className="text-sm font-semibold">Filters</span>
+      {/* Header */}
+      <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 bg-gray-50/80">
+        <span className="text-xs font-semibold text-gray-700 uppercase tracking-wider">Filters</span>
         <div className="flex items-center gap-1">
+          {hasAnyFilter && (
+            <button
+              onClick={clearAllFilters}
+              className="p-1 hover:bg-gray-200 rounded text-gray-400 hover:text-gray-600 transition-colors"
+              title="Clear all filters"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+            </button>
+          )}
           <button
             onClick={() => setIsPinned(!isPinned)}
-            className="p-1 hover:bg-gray-200 rounded"
-            title={isPinned ? "Unpin" : "Pin"}
+            className="p-1 hover:bg-gray-200 rounded text-gray-400 hover:text-gray-600 transition-colors"
+            title={isPinned ? "Unpin panel" : "Pin panel open"}
           >
-            {isPinned ? <PinOff className="w-4 h-4" /> : <Pin className="w-4 h-4" />}
+            {isPinned ? <PinOff className="w-3.5 h-3.5" /> : <Pin className="w-3.5 h-3.5" />}
           </button>
           {!isPinned && (
             <button
               onClick={onClose}
-              className="p-1 hover:bg-gray-200 rounded"
+              className="p-1 hover:bg-gray-200 rounded text-gray-400 hover:text-gray-600 transition-colors"
             >
-              <X className="w-4 h-4" />
+              <X className="w-3.5 h-3.5" />
             </button>
           )}
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        <div className="border-b border-gray-200 p-3">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-semibold text-gray-700">WBS</span>
-            {qf.selectedWbsIds.length > 0 && (
-              <button
-                onClick={() => updateQuickFilters({ selectedWbsIds: [] })}
-                className="text-xs text-blue-600 hover:text-blue-800"
-              >
-                Clear
-              </button>
-            )}
+        {/* WBS Section */}
+        <div className="px-3 pt-3 pb-2">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">WBS</span>
+            <span className="text-[10px] text-gray-400">{filteredActivityCount} activities</span>
           </div>
-          <div className="text-xs text-gray-500 mb-2">
-            {filteredActivityCount} activities
-          </div>
-          <div className="max-h-48 overflow-y-auto border border-gray-200 rounded">
+          <div className="max-h-52 overflow-y-auto border border-gray-200 rounded-lg bg-gray-50/50">
             {wbsHierarchy.map(renderWbsNode)}
           </div>
         </div>
 
-        <div className="border-b border-gray-200 p-3">
-          <div className="text-xs font-semibold text-gray-700 mb-2">Status</div>
-          <div className="space-y-1">
+        {/* Status Section */}
+        <div className="px-3 py-2 border-t border-gray-100">
+          <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Status</div>
+          <div className="flex flex-wrap gap-1">
             {[
               { value: 'all', label: 'All' },
-              { value: 'not_completed', label: 'Not Completed' },
+              { value: 'not_completed', label: 'Not Complete' },
               { value: 'in_progress', label: 'In Progress' },
-              { value: 'completed', label: 'Completed' },
+              { value: 'completed', label: 'Complete' },
               { value: 'not_started', label: 'Not Started' }
             ].map(option => (
-              <label key={option.value} className="flex items-center text-xs">
-                <input
-                  type="radio"
-                  name="status"
-                  value={option.value}
-                  checked={qf.activityStatus === option.value}
-                  onChange={(e) => updateQuickFilters({ activityStatus: e.target.value as any })}
-                  className="mr-2"
-                />
+              <span
+                key={option.value}
+                className={pillClass(qf.activityStatus === option.value)}
+                onClick={() => updateQuickFilters({ activityStatus: option.value as any })}
+              >
                 {option.label}
-              </label>
+              </span>
             ))}
           </div>
         </div>
 
-        <div className="border-b border-gray-200 p-3">
-          <div className="text-xs font-semibold text-gray-700 mb-2">Criticality</div>
-          <div className="space-y-1">
+        {/* Criticality Section */}
+        <div className="px-3 py-2 border-t border-gray-100">
+          <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Criticality</div>
+          <div className="flex flex-wrap gap-1">
             {[
               { value: 'all', label: 'All' },
               { value: 'critical', label: 'Critical' },
-              { value: 'crit_and_near_critical', label: 'Critical & Near Critical' },
+              { value: 'crit_and_near_critical', label: 'Crit & Near' },
               { value: 'non_critical', label: 'Non-Critical' }
             ].map(option => (
-              <label key={option.value} className="flex items-center text-xs">
-                <input
-                  type="radio"
-                  name="criticality"
-                  value={option.value}
-                  checked={qf.criticality === option.value}
-                  onChange={(e) => updateQuickFilters({ criticality: e.target.value as any })}
-                  className="mr-2"
-                />
+              <span
+                key={option.value}
+                className={pillClass(qf.criticality === option.value)}
+                onClick={() => updateQuickFilters({ criticality: option.value as any })}
+              >
                 {option.label}
-              </label>
+              </span>
             ))}
           </div>
         </div>
 
-        <div className="border-b border-gray-200 p-3">
-          <div className="text-xs font-semibold text-gray-700 mb-2">Timeframe</div>
-          <div className="space-y-1">
+        {/* Timeframe Section */}
+        <div className="px-3 py-2 border-t border-gray-100">
+          <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Timeframe</div>
+          <div className="flex flex-wrap gap-1">
             {[
               { value: 'all', label: 'All', disabled: false },
-              { value: '3_week_lookahead', label: '3-Week Lookahead (1 wk lookback)', disabled: !dataDate },
-              { value: '3_month_lookahead', label: '3-Month Lookahead (2 wk lookback)', disabled: !dataDate },
-              { value: '1_month_lookback', label: '1-Month Lookback', disabled: !dataDate }
+              { value: '3_week_lookahead', label: '3-Wk Lookahead', disabled: !dataDate },
+              { value: '3_month_lookahead', label: '3-Mo Lookahead', disabled: !dataDate },
+              { value: '1_month_lookback', label: '1-Mo Lookback', disabled: !dataDate }
             ].map(option => (
-              <label
+              <span
                 key={option.value}
-                className={`flex items-center text-xs ${option.disabled ? 'text-gray-400' : ''}`}
+                className={option.disabled ? pillDisabledClass : pillClass(qf.timeframe === option.value)}
+                onClick={() => { if (!option.disabled) updateQuickFilters({ timeframe: option.value as any }); }}
                 title={option.disabled ? 'No data date available' : ''}
               >
-                <input
-                  type="radio"
-                  name="timeframe"
-                  value={option.value}
-                  checked={qf.timeframe === option.value}
-                  onChange={(e) => updateQuickFilters({ timeframe: e.target.value as any })}
-                  disabled={option.disabled}
-                  className="mr-2"
-                />
                 {option.label}
-              </label>
+              </span>
             ))}
           </div>
         </div>
 
-        <div className="p-3">
-          <div className="text-xs font-semibold text-gray-700 mb-2">Activity Code</div>
+        {/* Activity Code Section */}
+        <div className="px-3 py-2 border-t border-gray-100">
+          <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Activity Code</div>
           <select
             value={qf.activityCodeTypeId || ''}
             onChange={(e) => updateQuickFilters({
               activityCodeTypeId: e.target.value || null,
               selectedCodeValueIds: []
             })}
-            className="w-full text-xs border border-gray-300 rounded px-2 py-1 mb-2"
+            className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 mb-2"
           >
             <option value="">Select code type...</option>
             {codeTypes.map(ct => (
@@ -462,21 +480,11 @@ export function QuickFilterPanel({
           {qf.activityCodeTypeId && (
             <>
               {loadingCodeValues ? (
-                <div className="text-xs text-gray-500">Loading...</div>
+                <div className="text-[11px] text-gray-400 py-2 text-center">Loading...</div>
               ) : (
-                <>
-                  {qf.selectedCodeValueIds.length > 0 && (
-                    <button
-                      onClick={() => updateQuickFilters({ selectedCodeValueIds: [] })}
-                      className="text-xs text-blue-600 hover:text-blue-800 mb-1"
-                    >
-                      Clear
-                    </button>
-                  )}
-                  <div className="max-h-48 overflow-y-auto border border-gray-200 rounded">
-                    {codeValueHierarchy.map(renderCodeValueNode)}
-                  </div>
-                </>
+                <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg bg-gray-50/50">
+                  {codeValueHierarchy.map(renderCodeValueNode)}
+                </div>
               )}
             </>
           )}
