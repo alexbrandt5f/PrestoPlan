@@ -126,8 +126,13 @@ export function useWorkspaceSetup() {
         // Step 3: Create personal workspace (company + membership).
         // The personal workspace is the user's default "home" company.
         // is_personal = true distinguishes it from invited company workspaces.
+        //
+        // Slug collision handling: if the base slug (e.g., "testuser") is
+        // already taken, append a random 4-char suffix and retry once.
+        // This handles the case where two users have the same email prefix
+        // (e.g., testuser@gmail.com and testuser@outlook.com).
         // ----------------------------------------------------------------
-        const slug = (user.email || 'user')
+        const baseSlug = (user.email || 'user')
           .split('@')[0]
           .toLowerCase()
           .replace(/[^a-z0-9]/g, '-')
@@ -135,8 +140,11 @@ export function useWorkspaceSetup() {
           .replace(/^-|-$/g, '');
 
         const companyId = crypto.randomUUID();
-        console.log('Creating company with slug:', slug, 'and ID:', companyId);
+        let slug = baseSlug;
+        let companyCreated = false;
 
+        // Attempt 1: try with the base slug
+        console.log('Creating company with slug:', slug, 'and ID:', companyId);
         const { error: companyError } = await supabase
           .from('companies')
           .insert({
@@ -148,16 +156,39 @@ export function useWorkspaceSetup() {
           });
 
         if (companyError) {
-          // 23505 = slug collision or duplicate. Rare but possible.
           if (companyError.code === '23505') {
-            console.log('Company already exists (race condition), continuing...');
+            // Slug collision — append random suffix and retry
+            const suffix = Math.random().toString(36).substring(2, 6);
+            slug = `${baseSlug}-${suffix}`;
+            console.log('Slug collision, retrying with:', slug);
+
+            const { error: retryError } = await supabase
+              .from('companies')
+              .insert({
+                id: companyId,
+                name: user.email || 'My Workspace',
+                slug: slug,
+                plan_type: 'free',
+                is_personal: true,
+              });
+
+            if (retryError) {
+              console.error('Error creating company (retry):', retryError);
+              setIsSettingUp(false);
+              return;
+            }
+            companyCreated = true;
           } else {
             console.error('Error creating company:', companyError);
             setIsSettingUp(false);
             return;
           }
         } else {
-          console.log('Company created successfully:', companyId);
+          companyCreated = true;
+        }
+
+        if (companyCreated) {
+          console.log('Company created successfully:', companyId, 'slug:', slug);
         }
 
         // Create membership — explicitly set role = 'admin' because the
