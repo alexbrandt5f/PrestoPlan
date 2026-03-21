@@ -339,7 +339,7 @@ export default function GanttChartAdvanced({
     drawActivities(ctx, scrollTop, scrollLeft, viewportSize.height);
     drawDataDateLine(ctx, scrollLeft, viewportSize.height);
     drawTodayLine(ctx, scrollLeft, viewportSize.height);
-  }, [activities, selectedActivity, scrollTop, scrollLeft, viewportSize, minDate, dataDate, timelineWidth, layout, visibleGroupedActivities, relationships]);
+  }, [activities, selectedActivity, scrollTop, scrollLeft, viewportSize, minDate, dataDate, timelineWidth, layout, visibleGroupedActivities, relationships, codeColors, codeAssignments]);
 
   function dateToX(date: Date): number {
     const dayOffset = (date.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24);
