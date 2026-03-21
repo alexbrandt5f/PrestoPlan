@@ -1,4 +1,22 @@
-import { useEffect, useState } from 'react';
+/**
+ * useProjects.ts
+ *
+ * Fetches all non-deleted projects for a given company.
+ * Also fetches schedule version counts per project.
+ *
+ * FIX FOR WORKSPACE SWITCH:
+ *   When companyId changes (user switches workspace), the hook:
+ *   1. Immediately clears the projects list (prevents stale data flash)
+ *   2. Sets loading = true
+ *   3. Fetches projects for the new company
+ *
+ *   The useEffect uses companyId in its dependency array, so React
+ *   re-runs the effect whenever the active company changes.
+ *   The useCallback on fetchProjects ensures it captures the current
+ *   companyId correctly (avoids stale closure).
+ */
+
+import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 
 interface Project {
@@ -16,8 +34,9 @@ export function useProjects(companyId?: string) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchProjects = async () => {
+  const fetchProjects = useCallback(async () => {
     if (!companyId) {
+      setProjects([]);
       setLoading(false);
       return;
     }
@@ -64,11 +83,14 @@ export function useProjects(companyId?: string) {
     } finally {
       setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    fetchProjects();
   }, [companyId]);
+
+  // Clear projects immediately when companyId changes, then re-fetch
+  useEffect(() => {
+    setProjects([]); // Clear stale data from previous company
+    setLoading(true);
+    fetchProjects();
+  }, [fetchProjects]);
 
   return { projects, loading, error, refetch: fetchProjects };
 }
