@@ -134,8 +134,7 @@ export async function uploadScheduleFile({
 
           if (decodeError) {
             console.error('[XER Parser] Calendar decode RPC error:', decodeError);
-            // Don't fail the entire parse — the raw data is already saved.
-            // Log the error but still mark parse as complete.
+            onStatusChange?.('parsing', 'Warning: Calendar decode failed - float values may be missing');
           } else {
             console.log('[XER Parser] Calendar decode results:', decodeResult);
 

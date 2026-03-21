@@ -1,5 +1,6 @@
 import { useRef, useEffect, useState, useMemo, useCallback } from 'react';
 import { ChevronUp, ChevronDown, ChevronRight } from 'lucide-react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { useGanttLayout } from '../../contexts/GanttLayoutContext';
 import { hoursToWorkingDays, hoursToDays, formatDate } from '../../lib/dateUtils';
 
@@ -19,13 +20,12 @@ interface ActivityTableAdvancedProps {
   selectedActivity: Activity | null;
   onSelectActivity: (activity: Activity) => void;
   codeAssignments: Map<string, Map<string, string>>;
-  customFieldValues: Map<string, Map<string, any>>;
   wbsMap: Map<string, any>;
   tracedActivityIds: Set<string>;
   groupedActivitiesFromParent?: Array<{ type: 'group' | 'activity'; groupKey?: string; groupLabel?: string; activities?: Activity[]; activity?: Activity; level?: number }>;
 }
 
-const ROW_HEIGHT = 26;
+const ROW_HEIGHT = 28;
 const HEADER_HEIGHT = 40;
 
 export default function ActivityTableAdvanced({
@@ -34,7 +34,6 @@ export default function ActivityTableAdvanced({
   selectedActivity,
   onSelectActivity,
   codeAssignments,
-  customFieldValues,
   wbsMap,
   tracedActivityIds,
   groupedActivitiesFromParent
@@ -42,6 +41,7 @@ export default function ActivityTableAdvanced({
   const { layout, updateSorts, updateColumns } = useGanttLayout();
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const parentRef = useRef<HTMLDivElement>(null);
   const [resizingColumn, setResizingColumn] = useState<string | null>(null);
   const [resizeStartX, setResizeStartX] = useState(0);
   const [resizeStartWidth, setResizeStartWidth] = useState(0);
@@ -66,8 +66,7 @@ export default function ActivityTableAdvanced({
           const activityCodes = codeAssignments.get(activity.id);
           enriched[col.field] = activityCodes?.get(col.sourceId) || '';
         } else if (col.source === 'custom' && col.sourceId) {
-          const activityFields = customFieldValues.get(activity.id);
-          enriched[col.field] = activityFields?.get(col.sourceId) || '';
+          enriched[col.field] = '';
         }
       });
 
@@ -103,7 +102,7 @@ export default function ActivityTableAdvanced({
     }
 
     return result;
-  }, [activities, layout.filters, layout.sorts, layout.columns, codeAssignments, customFieldValues]);
+  }, [activities, layout.filters, layout.sorts, layout.columns, codeAssignments]);
 
   const groupedActivities = useMemo(() => {
     if (groupedActivitiesFromParent) {
@@ -179,6 +178,13 @@ export default function ActivityTableAdvanced({
 
     return result;
   }, [processedActivities, layout.grouping, codeAssignments, wbsMap, collapsedGroups, groupedActivitiesFromParent]);
+
+  const virtualizer = useVirtualizer({
+    count: groupedActivities.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => ROW_HEIGHT,
+    overscan: 20,
+  });
 
   function evaluateFilter(value: any, operator: string, filterValue: any, filterValue2?: any): boolean {
     if (operator === 'isBlank') return value === null || value === undefined || value === '';
@@ -261,7 +267,7 @@ export default function ActivityTableAdvanced({
   }, [resizingColumn, resizeStartX, resizeStartWidth, layout.columns, updateColumns]);
 
   useEffect(() => {
-    const scrollContainer = scrollContainerRef.current;
+    const scrollContainer = parentRef.current;
     if (!scrollContainer) return;
 
     function handleScroll() {
@@ -280,8 +286,8 @@ export default function ActivityTableAdvanced({
   useEffect(() => {
     function handleGanttScroll(e: Event) {
       const customEvent = e as CustomEvent;
-      if (scrollContainerRef.current && customEvent.detail?.scrollTop !== undefined) {
-        scrollContainerRef.current.scrollTop = customEvent.detail.scrollTop;
+      if (parentRef.current && customEvent.detail?.scrollTop !== undefined) {
+        parentRef.current.scrollTop = customEvent.detail.scrollTop;
       }
     }
 
@@ -319,30 +325,18 @@ export default function ActivityTableAdvanced({
         const newActivity = flatActivities[newIndex];
         onSelectActivity(newActivity);
 
-        if (scrollContainerRef.current) {
-          const visualIndex = groupedActivities.findIndex(item =>
-            item.type === 'activity' && item.activity?.id === newActivity.id
-          );
-
-          if (visualIndex >= 0) {
-            const rowTop = visualIndex * ROW_HEIGHT;
-            const rowBottom = rowTop + ROW_HEIGHT;
-            const containerHeight = scrollContainerRef.current.clientHeight;
-            const scrollTop = scrollContainerRef.current.scrollTop;
-
-            if (rowBottom > scrollTop + containerHeight) {
-              scrollContainerRef.current.scrollTop = rowBottom - containerHeight;
-            } else if (rowTop < scrollTop) {
-              scrollContainerRef.current.scrollTop = rowTop;
-            }
-          }
+        const visualIndex = groupedActivities.findIndex(item =>
+          item.type === 'activity' && item.activity?.id === newActivity.id
+        );
+        if (visualIndex >= 0) {
+          virtualizer.scrollToIndex(visualIndex, { align: 'auto' });
         }
       }
     }
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [flatActivities, groupedActivities, selectedActivity, onSelectActivity]);
+  }, [flatActivities, groupedActivities, selectedActivity, onSelectActivity, virtualizer]);
 
   function formatValue(value: any, column: any, activity: Activity): string {
     if (value === null || value === undefined) return '-';
@@ -405,22 +399,16 @@ export default function ActivityTableAdvanced({
   }, []);
 
   useEffect(() => {
-    if (!selectedActivity || !scrollContainerRef.current) return;
+    if (!selectedActivity) return;
 
     const rowIndex = groupedActivities.findIndex(item =>
       item.type === 'activity' && item.activity?.id === selectedActivity.id
     );
 
     if (rowIndex !== -1) {
-      const scrollTop = rowIndex * ROW_HEIGHT;
-      const containerHeight = scrollContainerRef.current.clientHeight;
-      const currentScrollTop = scrollContainerRef.current.scrollTop;
-
-      if (scrollTop < currentScrollTop || scrollTop > currentScrollTop + containerHeight - ROW_HEIGHT) {
-        scrollContainerRef.current.scrollTop = scrollTop - containerHeight / 2 + ROW_HEIGHT / 2;
-      }
+      virtualizer.scrollToIndex(rowIndex, { align: 'center' });
     }
-  }, [selectedActivity, groupedActivities]);
+  }, [selectedActivity, groupedActivities, virtualizer]);
 
   function toggleGroup(groupKey: string) {
     const newCollapsed = new Set(collapsedGroups);
@@ -489,9 +477,23 @@ export default function ActivityTableAdvanced({
         </div>
       </div>
 
-      <div ref={scrollContainerRef} className="flex-1 overflow-auto">
-        <div style={{ width: totalWidth }}>
-          {groupedActivities.map((item, index) => {
+      <div
+        ref={(el) => {
+          (parentRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
+          (scrollContainerRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
+        }}
+        className="flex-1 overflow-auto"
+      >
+        <div
+          style={{
+            height: `${virtualizer.getTotalSize()}px`,
+            width: totalWidth,
+            position: 'relative',
+          }}
+        >
+          {virtualizer.getVirtualItems().map((virtualRow) => {
+            const item = groupedActivities[virtualRow.index];
+
             if (item.type === 'group') {
               const isCollapsed = collapsedGroups.has(item.groupKey!);
               const level = item.level || 0;
@@ -505,7 +507,16 @@ export default function ActivityTableAdvanced({
                 <div
                   key={`group-${item.groupKey}`}
                   className={`flex items-center ${bgColorClass} border-b border-gray-300 cursor-pointer ${hoverColorClass}`}
-                  style={{ height: ROW_HEIGHT, minHeight: ROW_HEIGHT, maxHeight: ROW_HEIGHT, boxSizing: 'border-box', overflow: 'hidden' }}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: `${virtualRow.size}px`,
+                    transform: `translateY(${virtualRow.start}px)`,
+                    boxSizing: 'border-box',
+                    overflow: 'hidden',
+                  }}
                   onClick={() => toggleGroup(item.groupKey!)}
                 >
                   <div className="flex items-center gap-2 px-3" style={{ paddingLeft: `${12 + indent}px` }}>
@@ -523,13 +534,23 @@ export default function ActivityTableAdvanced({
             const activity = item.activity!;
             const isSelected = selectedActivity?.id === activity.id;
             const isTraced = tracedActivityIds.has(activity.id);
+
             return (
               <div
                 key={activity.id}
                 className={`flex border-b border-gray-100 cursor-pointer ${
                   isSelected ? 'bg-yellow-100' : isTraced ? 'bg-orange-50' : 'bg-white hover:bg-gray-50'
                 }`}
-                style={{ height: ROW_HEIGHT, minHeight: ROW_HEIGHT, maxHeight: ROW_HEIGHT, boxSizing: 'border-box', overflow: 'hidden' }}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: totalWidth,
+                  height: `${virtualRow.size}px`,
+                  transform: `translateY(${virtualRow.start}px)`,
+                  boxSizing: 'border-box',
+                  overflow: 'hidden',
+                }}
                 onClick={() => handleActivityClick(activity)}
               >
                 {visibleColumns.map(column => {

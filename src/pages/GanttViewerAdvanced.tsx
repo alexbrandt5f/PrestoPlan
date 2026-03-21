@@ -63,7 +63,6 @@ function GanttViewerContent() {
   const [calendars, setCalendars] = useState<Calendar[]>([]);
   const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
   const [codeAssignments, setCodeAssignments] = useState<Map<string, Map<string, string>>>(new Map());
-  const [customFieldValues, setCustomFieldValues] = useState<Map<string, Map<string, any>>>(new Map());
   const [wbsMap, setWbsMap] = useState<Map<string, any>>(new Map());
   const [codeColors, setCodeColors] = useState<Map<string, string>>(new Map());
   const [showColorLegend, setShowColorLegend] = useState(false);
@@ -73,6 +72,7 @@ function GanttViewerContent() {
 
   const loadedVersionRef = useRef<string | null>(null);
   const mountedRef = useRef(true);
+  const colorCacheRef = useRef<Map<string, { assignments: Map<string, Map<string, string>>; colors: Map<string, string>; typeName: string }>>(new Map());
 
   useEffect(() => {
     mountedRef.current = true;
@@ -92,10 +92,24 @@ function GanttViewerContent() {
   }, [user, projectId, versionId]);
 
   useEffect(() => {
-    if (layout.viewSettings.colorByCodeTypeId) {
-      generateCodeColors();
+    if (!layout.viewSettings.colorByCodeTypeId) {
+      setCodeColors(new Map());
+      setCodeTypeName('');
+      return;
     }
-  }, [layout.viewSettings.colorByCodeTypeId, activities, codeAssignments]);
+
+    const codeTypeId = layout.viewSettings.colorByCodeTypeId;
+
+    const cached = colorCacheRef.current.get(codeTypeId);
+    if (cached) {
+      setCodeAssignments(cached.assignments);
+      setCodeColors(cached.colors);
+      setCodeTypeName(cached.typeName);
+      return;
+    }
+
+    loadColorByCodeType(codeTypeId);
+  }, [layout.viewSettings.colorByCodeTypeId]);
 
   async function loadData() {
     if (!mountedRef.current) return;
@@ -190,30 +204,6 @@ function GanttViewerContent() {
       setActivities(allActivities);
       console.log('DEBUG: activities loaded:', allActivities.length);
 
-      setLoadingProgress(60);
-      setLoadingMessage('Loading activity codes...');
-
-      // Load code assignments for all activities
-      try {
-        await loadCodeAssignmentsForActivities(allActivities);
-        if (!mountedRef.current) return;
-      } catch (error) {
-        console.warn('Error loading code assignments:', error);
-      }
-
-      setLoadingProgress(80);
-      setLoadingMessage('Loading custom fields...');
-
-      // Load custom field values for all activities
-      try {
-        await loadCustomFieldValuesForActivities(allActivities);
-        if (!mountedRef.current) return;
-      } catch (error) {
-        console.warn('Error loading custom fields:', error);
-      }
-
-      if (!mountedRef.current) return;
-
       setLoadingProgress(100);
       setLoadingMessage('Complete');
       setLoading(false);
@@ -292,17 +282,9 @@ function GanttViewerContent() {
     return allActivities;
   }
 
-  async function loadCodeAssignmentsForActivities(activities: Activity[]) {
-    if (activities.length === 0) return;
-
-    const CHUNK_SIZE = 1000;
-    const PAGE_SIZE = 1000;
-
-    for (let i = 0; i < activities.length; i += CHUNK_SIZE) {
-      const chunk = activities.slice(i, i + CHUNK_SIZE);
-      const activityIds = chunk.map(a => a.id);
-
-      // Fetch code assignments with pagination (since there could be 16,436 assignments)
+  async function loadColorByCodeType(codeTypeId: string) {
+    try {
+      const PAGE_SIZE = 1000;
       let allAssignments: any[] = [];
       let offset = 0;
       let hasMore = true;
@@ -316,20 +298,21 @@ function GanttViewerContent() {
             cpm_code_values!inner (
               id,
               code_type_id,
-              code_value_name
+              code_value_name,
+              code_value_color
             )
           `)
           .eq('schedule_version_id', versionId)
-          .in('activity_id', activityIds)
+          .eq('cpm_code_values.code_type_id', codeTypeId)
           .range(offset, offset + PAGE_SIZE - 1);
 
         if (error) {
-          console.error('Error loading code assignments:', error);
+          console.error('Error loading code assignments for color:', error);
           break;
         }
 
         if (data && data.length > 0) {
-          allAssignments = [...allAssignments, ...data];
+          allAssignments.push(...data);
           offset += PAGE_SIZE;
           hasMore = data.length === PAGE_SIZE;
         } else {
@@ -337,95 +320,75 @@ function GanttViewerContent() {
         }
       }
 
-      // Update state with all assignments for this chunk
-      if (allAssignments.length > 0) {
-        setCodeAssignments(prev => {
-          const newMap = new Map(prev);
-          allAssignments.forEach((assignment: any) => {
-            if (!newMap.has(assignment.activity_id)) {
-              newMap.set(assignment.activity_id, new Map());
-            }
-            const activityCodes = newMap.get(assignment.activity_id)!;
-            activityCodes.set(
-              assignment.cpm_code_values.code_type_id,
-              assignment.cpm_code_values.code_value_name
-            );
-          });
-          return newMap;
-        });
-      }
+      if (!mountedRef.current) return;
+
+      const newAssignments = new Map<string, Map<string, string>>();
+      const uniqueValues = new Set<string>();
+
+      allAssignments.forEach((assignment: any) => {
+        const codeValue = assignment.cpm_code_values;
+        if (!newAssignments.has(assignment.activity_id)) {
+          newAssignments.set(assignment.activity_id, new Map());
+        }
+        newAssignments.get(assignment.activity_id)!.set(codeValue.code_type_id, codeValue.code_value_name);
+        uniqueValues.add(codeValue.code_value_name);
+      });
+
+      const newColors = new Map<string, string>();
+
+      const p6ColorMap = new Map<string, number>();
+      allAssignments.forEach((assignment: any) => {
+        const cv = assignment.cpm_code_values;
+        if (cv.code_value_color != null && !p6ColorMap.has(cv.code_value_name)) {
+          p6ColorMap.set(cv.code_value_name, cv.code_value_color);
+        }
+      });
+
+      Array.from(uniqueValues).forEach((valueName) => {
+        const p6Color = p6ColorMap.get(valueName);
+        if (p6Color != null && p6Color > 0) {
+          const r = (p6Color >> 16) & 0xFF;
+          const g = (p6Color >> 8) & 0xFF;
+          const b = p6Color & 0xFF;
+          newColors.set(valueName, `rgb(${r}, ${g}, ${b})`);
+        } else {
+          newColors.set(valueName, hashColor(valueName));
+        }
+      });
+
+      let typeName = '';
+      const { data: typeData } = await supabase
+        .from('cpm_code_types')
+        .select('code_type_name')
+        .eq('id', codeTypeId)
+        .maybeSingle();
+      if (typeData) typeName = typeData.code_type_name;
+
+      if (!mountedRef.current) return;
+
+      setCodeAssignments(newAssignments);
+      setCodeColors(newColors);
+      setCodeTypeName(typeName);
+
+      colorCacheRef.current.set(codeTypeId, {
+        assignments: newAssignments,
+        colors: newColors,
+        typeName,
+      });
+    } catch (error) {
+      console.error('Failed to load color-by code assignments:', error);
     }
   }
 
-  async function loadCustomFieldValuesForActivities(activities: Activity[]) {
-    if (activities.length === 0) return;
-
-    const CHUNK_SIZE = 1000;
-
-    for (let i = 0; i < activities.length; i += CHUNK_SIZE) {
-      const chunk = activities.slice(i, i + CHUNK_SIZE);
-
-      const { data, error } = await supabase
-        .from('cpm_custom_field_values')
-        .select(`
-          activity_id,
-          field_type_id,
-          field_value,
-          field_value_numeric,
-          field_value_date
-        `)
-        .eq('schedule_version_id', versionId)
-        .in('activity_id', chunk.map(a => a.id));
-
-      if (error) {
-        console.error('Error loading custom field values:', error);
-        continue;
-      }
-
-      if (data && data.length > 0) {
-        setCustomFieldValues(prev => {
-          const newMap = new Map(prev);
-          data.forEach((fieldValue: any) => {
-            if (!newMap.has(fieldValue.activity_id)) {
-              newMap.set(fieldValue.activity_id, new Map());
-            }
-            const activityFields = newMap.get(fieldValue.activity_id)!;
-            const value = fieldValue.field_value_numeric ?? fieldValue.field_value_date ?? fieldValue.field_value;
-            activityFields.set(fieldValue.field_type_id, value);
-          });
-          return newMap;
-        });
-      }
+  function hashColor(str: string): string {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash |= 0;
     }
-  }
-
-
-  async function generateCodeColors() {
-    if (!layout.viewSettings.colorByCodeTypeId) return;
-
-    const uniqueValues = new Set<string>();
-    activities.forEach(activity => {
-      const activityCodes = codeAssignments.get(activity.id);
-      const value = activityCodes?.get(layout.viewSettings.colorByCodeTypeId!);
-      if (value) uniqueValues.add(value);
-    });
-
-    const newColors = new Map<string, string>();
-    Array.from(uniqueValues).forEach((value, index) => {
-      newColors.set(value, COLOR_PALETTE[index % COLOR_PALETTE.length]);
-    });
-
-    setCodeColors(newColors);
-
-    const { data } = await supabase
-      .from('cpm_code_types')
-      .select('code_type_name')
-      .eq('id', layout.viewSettings.colorByCodeTypeId)
-      .maybeSingle();
-
-    if (data) {
-      setCodeTypeName(data.code_type_name);
-    }
+    const hue = Math.abs(hash) % 360;
+    return `hsl(${hue}, 65%, 55%)`;
   }
 
   const processedActivities = useMemo(() => {
@@ -437,8 +400,7 @@ function GanttViewerContent() {
           const activityCodes = codeAssignments.get(activity.id);
           enriched[col.field] = activityCodes?.get(col.sourceId) || '';
         } else if (col.source === 'custom' && col.sourceId) {
-          const activityFields = customFieldValues.get(activity.id);
-          enriched[col.field] = activityFields?.get(col.sourceId) || '';
+          enriched[col.field] = '';
         } else if (col.field.endsWith('_days')) {
           const hoursField = col.field.replace('_days', '_hours');
           enriched[col.field] = activity[hoursField];
@@ -447,7 +409,7 @@ function GanttViewerContent() {
 
       return enriched;
     });
-  }, [activities, layout.columns, codeAssignments, customFieldValues]);
+  }, [activities, layout.columns, codeAssignments]);
 
   const groupedActivities = useMemo(() => {
     console.log('DEBUG: groupedActivities input - processedActivities:', processedActivities.length, 'grouping type:', layout.grouping.type, 'wbsMap size:', wbsMap.size);
@@ -488,15 +450,25 @@ function GanttViewerContent() {
     }
 
     if (layout.grouping.type === 'wbs') {
-      // Defensive: if wbsMap is empty or has no root nodes, fall back to flat list
-      // rather than returning an empty array (which causes a blank screen).
       const wbsArray = Array.from(wbsMap.values());
-      const rootWbs = wbsArray
-        .filter(w => !w.parent_wbs_id)
-        .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+
+      const childrenMap = new Map<string, any[]>();
+      const rootWbs: any[] = [];
+      wbsArray.forEach(w => {
+        if (!w.parent_wbs_id) {
+          rootWbs.push(w);
+        } else {
+          if (!childrenMap.has(w.parent_wbs_id)) {
+            childrenMap.set(w.parent_wbs_id, []);
+          }
+          childrenMap.get(w.parent_wbs_id)!.push(w);
+        }
+      });
+      rootWbs.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+
+      const descendantCountCache = new Map<string, number>();
 
       if (wbsArray.length === 0 || rootWbs.length === 0) {
-        // No WBS data available — show activities as a flat list
         const output = result.map(act => ({ type: 'activity' as const, activity: act }));
         console.log('DEBUG: groupedActivities output length:', output.length);
         return output;
@@ -513,7 +485,6 @@ function GanttViewerContent() {
           }
           wbsActivities.get(activity.wbs_id)!.push(activity);
         } else {
-          // Activity has no wbs_id or its wbs_id doesn't match any known WBS node
           orphanedActivities.push(activity);
         }
       });
@@ -524,18 +495,18 @@ function GanttViewerContent() {
 
         const directActivities = wbsActivities.get(wbsId) || [];
 
-        // Count all activities in this WBS node AND all descendant nodes
         function countDescendantActivities(nodeId: string): number {
+          if (descendantCountCache.has(nodeId)) return descendantCountCache.get(nodeId)!;
           let count = (wbsActivities.get(nodeId) || []).length;
-          const childNodes = wbsArray.filter(w => w.parent_wbs_id === nodeId);
-          childNodes.forEach(child => {
+          const children = childrenMap.get(nodeId) || [];
+          children.forEach(child => {
             count += countDescendantActivities(child.id);
           });
+          descendantCountCache.set(nodeId, count);
           return count;
         }
         const totalActivities = countDescendantActivities(wbsId);
 
-        // Store totalActivities on the group item so the table can display it
         wbsHierarchy.push({
           type: 'group',
           groupKey: wbsId,
@@ -549,8 +520,7 @@ function GanttViewerContent() {
           wbsHierarchy.push({ type: 'activity', activity });
         });
 
-        const children = wbsArray
-          .filter(w => w.parent_wbs_id === wbsId)
+        const children = (childrenMap.get(wbsId) || [])
           .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
         children.forEach(child => addWbsHierarchy(child.id, level + 1));
       }
@@ -619,7 +589,7 @@ function GanttViewerContent() {
 
     console.log('DEBUG: groupedActivities output length:', finalResult.length);
     return finalResult;
-  }, [processedActivities, layout, codeAssignments, wbsMap]);
+  }, [processedActivities, layout.grouping, layout.filters, layout.sorts, codeAssignments, wbsMap]);
 
   function evaluateFilter(value: any, operator: string, filterValue: any, filterValue2?: any): boolean {
     if (operator === 'isBlank') return value === null || value === undefined || value === '';
@@ -741,7 +711,6 @@ function GanttViewerContent() {
               selectedActivity={selectedActivity}
               onSelectActivity={handleDirectSelect}
               codeAssignments={codeAssignments}
-              customFieldValues={customFieldValues}
               wbsMap={wbsMap}
               tracedActivityIds={tracedActivityIds}
               groupedActivitiesFromParent={groupedActivities}

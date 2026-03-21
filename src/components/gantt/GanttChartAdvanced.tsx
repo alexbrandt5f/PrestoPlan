@@ -43,7 +43,7 @@ interface GanttChartAdvancedProps {
   onActivitySelect?: (activity: Activity) => void;
 }
 
-const ROW_HEIGHT = 26;
+const ROW_HEIGHT = 28;
 const HEADER_HEIGHT = 40;
 const BAR_HEIGHT = 12;
 
