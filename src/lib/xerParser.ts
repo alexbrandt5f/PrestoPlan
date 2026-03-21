@@ -801,6 +801,13 @@ async function processACTVCODE(
         record.code_value_description = value;
       } else if (field === 'seq_num') {
         record.sort_order = parseInt(value) || 0;
+      } else if (field === 'parent_actv_code_id' && value) {
+        record.original_parent_code_value_id = value;
+      } else if (field === 'color' && value) {
+        const colorInt = parseInt(value);
+        if (!isNaN(colorInt)) {
+          record.code_value_color = colorInt;
+        }
       }
     });
 
@@ -808,6 +815,37 @@ async function processACTVCODE(
   });
 
   await batchInsert(supabase, 'cpm_code_values', records, onProgress);
+
+  const parentUpdates: Array<{ id: string; parent_code_value_id: string }> = [];
+
+  records.forEach(record => {
+    if (record.original_parent_code_value_id) {
+      const parentUuid = idMap.get(record.original_parent_code_value_id);
+      if (parentUuid) {
+        parentUpdates.push({
+          id: record.id,
+          parent_code_value_id: parentUuid,
+        });
+      }
+    }
+  });
+
+  if (parentUpdates.length > 0) {
+    const BATCH_SIZE = 100;
+    for (let i = 0; i < parentUpdates.length; i += BATCH_SIZE) {
+      const batch = parentUpdates.slice(i, i + BATCH_SIZE);
+      await Promise.all(
+        batch.map(update =>
+          supabase
+            .from('cpm_code_values')
+            .update({ parent_code_value_id: update.parent_code_value_id })
+            .eq('id', update.id)
+        )
+      );
+    }
+    console.log(`Resolved ${parentUpdates.length} activity code parent references`);
+  }
+
   return idMap;
 }
 
