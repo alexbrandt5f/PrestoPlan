@@ -831,7 +831,7 @@ function GanttViewerContent() {
 
       {/* Everything shifts right when panel is pinned */}
       <div
-        className="flex-1 flex flex-col"
+        className="flex-1 flex flex-col min-h-0 overflow-hidden"
         style={{
           marginLeft: isFilterPinned ? 272 : 0,
           transition: 'margin-left 200ms ease',
