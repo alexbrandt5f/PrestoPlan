@@ -582,8 +582,11 @@ function GanttViewerContent() {
       });
     }
 
-    if (layout.sorts.length > 0) {
-      result.sort((a, b) => {
+    // Helper function to sort activities (used both for ungrouped and within groups)
+    const sortActivities = (activities: Activity[]) => {
+      if (layout.sorts.length === 0) return activities;
+
+      return [...activities].sort((a, b) => {
         for (const sort of layout.sorts) {
           let aVal = a[sort.field];
           let bVal = b[sort.field];
@@ -596,10 +599,11 @@ function GanttViewerContent() {
         }
         return 0;
       });
-    }
+    };
 
     if (layout.grouping.type === 'none') {
-      const output = result.map(act => ({ type: 'activity' as const, activity: act }));
+      const sorted = sortActivities(result);
+      const output = sorted.map(act => ({ type: 'activity' as const, activity: act }));
       console.log('DEBUG: groupedActivities output length:', output.length);
       return output;
     }
@@ -648,7 +652,7 @@ function GanttViewerContent() {
         const wbs = wbsMap.get(wbsId);
         if (!wbs) return;
 
-        const directActivities = wbsActivities.get(wbsId) || [];
+        const directActivities = sortActivities(wbsActivities.get(wbsId) || []);
 
         function countDescendantActivities(nodeId: string): number {
           if (descendantCountCache.has(nodeId)) return descendantCountCache.get(nodeId)!;
@@ -689,14 +693,15 @@ function GanttViewerContent() {
       // Append any orphaned activities (no wbs_id or unrecognized wbs_id)
       // so they don't silently disappear
       if (orphanedActivities.length > 0) {
+        const sortedOrphaned = sortActivities(orphanedActivities);
         wbsHierarchy.push({
           type: 'group',
           groupKey: '__orphaned__',
           groupLabel: '(No WBS)',
-          activities: orphanedActivities,
+          activities: sortedOrphaned,
           level: 0
         });
-        orphanedActivities.forEach(activity => {
+        sortedOrphaned.forEach(activity => {
           wbsHierarchy.push({ type: 'activity', activity });
         });
       }
@@ -733,15 +738,17 @@ function GanttViewerContent() {
     const finalResult: Array<{ type: 'group' | 'activity'; groupKey?: string; groupLabel?: string; activities?: Activity[]; activity?: Activity; level?: number }> = [];
 
     groups.forEach((groupData, groupKey) => {
+      const sortedActivities = sortActivities(groupData.activities);
+
       finalResult.push({
         type: 'group',
         groupKey,
         groupLabel: groupData.label,
-        activities: groupData.activities,
+        activities: sortedActivities,
         level: 0
       });
 
-      groupData.activities.forEach(activity => {
+      sortedActivities.forEach(activity => {
         finalResult.push({ type: 'activity', activity });
       });
     });
