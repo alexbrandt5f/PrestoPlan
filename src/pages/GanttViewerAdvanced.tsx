@@ -472,6 +472,8 @@ function GanttViewerContent() {
     });
   }, [activities, layout.columns, codeAssignments]);
 
+  const nearCriticalThreshold = project?.settings?.near_critical_float_threshold || 10;
+
   const groupedActivities = useMemo(() => {
     console.log('DEBUG: groupedActivities input - processedActivities:', processedActivities.length, 'grouping type:', layout.grouping.type, 'wbsMap size:', wbsMap.size);
     let result = [...processedActivities];
@@ -805,8 +807,6 @@ function GanttViewerContent() {
       </div>
     );
   }
-
-  const nearCriticalThreshold = project?.settings?.near_critical_float_threshold || 10;
 
   return (
     <div className="h-screen flex flex-col bg-gray-50">
