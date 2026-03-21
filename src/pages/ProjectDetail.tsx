@@ -24,7 +24,7 @@ interface Project {
 export function ProjectDetail() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
-  const { company } = useCompany();
+  const { company, userRole } = useCompany();
   const { showToast } = useToast();
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
@@ -33,6 +33,7 @@ export function ProjectDetail() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [versionToDelete, setVersionToDelete] = useState<string | null>(null);
+  const [isDeletingVersion, setIsDeletingVersion] = useState(false);
 
   const { versions, loading: versionsLoading, deleteVersion, refresh } = useScheduleVersions(
     projectId || '',
@@ -134,6 +135,7 @@ export function ProjectDetail() {
   const handleDeleteVersion = async () => {
     if (!versionToDelete || !company) return;
 
+    setIsDeletingVersion(true);
     try {
       await deleteVersion(versionToDelete);
       showToast('Schedule version deleted', 'success');
@@ -141,6 +143,7 @@ export function ProjectDetail() {
       console.error('Error deleting version:', error);
       showToast('Failed to delete version', 'error');
     } finally {
+      setIsDeletingVersion(false);
       setVersionToDelete(null);
     }
   };
@@ -253,20 +256,24 @@ export function ProjectDetail() {
           </div>
 
           <div className="flex gap-3">
-            <button
-              onClick={() => setIsEditModalOpen(true)}
-              className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-            >
-              <Edit2 className="w-4 h-4" />
-              Edit
-            </button>
-            <button
-              onClick={() => setIsDeleteDialogOpen(true)}
-              className="flex items-center gap-2 px-4 py-2 border border-red-300 text-red-700 rounded-lg hover:bg-red-50 transition-colors"
-            >
-              <Trash2 className="w-4 h-4" />
-              Delete
-            </button>
+            {userRole === 'admin' && (
+              <>
+                <button
+                  onClick={() => setIsEditModalOpen(true)}
+                  className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  <Edit2 className="w-4 h-4" />
+                  Edit
+                </button>
+                <button
+                  onClick={() => setIsDeleteDialogOpen(true)}
+                  className="flex items-center gap-2 px-4 py-2 border border-red-300 text-red-700 rounded-lg hover:bg-red-50 transition-colors"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Delete
+                </button>
+              </>
+            )}
           </div>
         </div>
 
@@ -276,13 +283,15 @@ export function ProjectDetail() {
               <FileText className="w-5 h-5 text-[#1B4F72]" />
               <h2 className="text-xl font-semibold text-gray-900">Schedule Versions</h2>
             </div>
-            <button
-              onClick={() => setIsUploadModalOpen(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-[#2E86C1] text-white rounded-lg hover:bg-[#1B4F72] transition-colors"
-            >
-              <Upload className="w-4 h-4" />
-              Upload Schedule Version
-            </button>
+            {userRole === 'admin' && (
+              <button
+                onClick={() => setIsUploadModalOpen(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-[#2E86C1] text-white rounded-lg hover:bg-[#1B4F72] transition-colors"
+              >
+                <Upload className="w-4 h-4" />
+                Upload Schedule Version
+              </button>
+            )}
           </div>
 
           {versionsLoading ? (
@@ -352,15 +361,17 @@ export function ProjectDetail() {
                         </p>
                       )}
                     </div>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setVersionToDelete(version.id);
-                      }}
-                      className="text-gray-400 hover:text-red-600 transition-colors"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    {userRole === 'admin' && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setVersionToDelete(version.id);
+                        }}
+                        className="text-gray-400 hover:text-red-600 transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -423,21 +434,35 @@ export function ProjectDetail() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
             <h2 className="text-xl font-semibold text-gray-900 mb-4">Delete Schedule Version</h2>
-            <p className="text-gray-600 mb-6">
+            <p className="text-gray-600 mb-2">
               Are you sure you want to delete this schedule version? This action cannot be undone.
             </p>
+            {isDeletingVersion && (
+              <p className="text-sm text-amber-600 mb-4">
+                Deleting schedule data across all tables... this may take a moment.
+              </p>
+            )}
             <div className="flex gap-3">
               <button
                 onClick={() => setVersionToDelete(null)}
-                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                disabled={isDeletingVersion}
+                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Cancel
               </button>
               <button
                 onClick={handleDeleteVersion}
-                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                disabled={isDeletingVersion}
+                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                Delete
+                {isDeletingVersion ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  'Delete'
+                )}
               </button>
             </div>
           </div>

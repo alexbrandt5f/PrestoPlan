@@ -65,7 +65,7 @@ interface Invitation {
 }
 
 export function TeamManagement() {
-  const { company, userRole } = useCompany();
+  const { company, userRole, refetch: refetchCompany } = useCompany();
   const { user } = useAuth();
   const { showToast } = useToast();
 
@@ -73,6 +73,10 @@ export function TeamManagement() {
   const [members, setMembers] = useState<Member[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Workspace rename state
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [newWorkspaceName, setNewWorkspaceName] = useState('');
 
   // Invite form state
   const [inviteEmail, setInviteEmail] = useState('');
@@ -323,6 +327,36 @@ export function TeamManagement() {
   };
 
   /**
+   * Rename the current workspace.
+   * Updates the companies.name column and refreshes the company context.
+   */
+  const handleRenameWorkspace = async () => {
+    if (!company || !newWorkspaceName.trim()) return;
+
+    try {
+      const { error } = await supabase
+        .from('companies')
+        .update({ name: newWorkspaceName.trim() })
+        .eq('id', company.id);
+
+      if (error) {
+        console.error('Error renaming workspace:', error);
+        showToast('Failed to rename workspace', 'error');
+        return;
+      }
+
+      showToast('Workspace renamed', 'success');
+      setIsRenaming(false);
+      setNewWorkspaceName('');
+      // Refresh company data so Navbar and Dashboard pick up the new name
+      refetchCompany();
+    } catch (error) {
+      console.error('Unexpected error renaming workspace:', error);
+      showToast('Failed to rename workspace', 'error');
+    }
+  };
+
+  /**
    * Format a date string for display.
    */
   const formatDate = (dateStr: string): string => {
@@ -366,13 +400,53 @@ export function TeamManagement() {
       <Navbar />
 
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Page header */}
+        {/* Page header with rename */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-1">Team</h1>
-          <p className="text-gray-600">
-            Manage members and invitations for{' '}
-            <span className="font-medium text-gray-800">{company.name}</span>
-          </p>
+          <div className="flex items-center gap-2">
+            {isRenaming ? (
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={newWorkspaceName}
+                  onChange={(e) => setNewWorkspaceName(e.target.value)}
+                  placeholder={company.name}
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleRenameWorkspace();
+                    if (e.key === 'Escape') { setIsRenaming(false); setNewWorkspaceName(''); }
+                  }}
+                  className="px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2E86C1] focus:border-transparent outline-none text-sm"
+                />
+                <button
+                  onClick={handleRenameWorkspace}
+                  disabled={!newWorkspaceName.trim()}
+                  className="px-3 py-1.5 bg-[#2E86C1] text-white text-sm rounded-lg hover:bg-[#1B4F72] disabled:opacity-50"
+                >
+                  Save
+                </button>
+                <button
+                  onClick={() => { setIsRenaming(false); setNewWorkspaceName(''); }}
+                  className="px-3 py-1.5 text-gray-600 text-sm hover:bg-gray-100 rounded-lg"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <p className="text-gray-600">
+                Manage members and invitations for{' '}
+                <span className="font-medium text-gray-800">{company.name}</span>
+                {isAdmin && (
+                  <button
+                    onClick={() => { setIsRenaming(true); setNewWorkspaceName(company.name); }}
+                    className="ml-2 text-xs text-[#2E86C1] hover:text-[#1B4F72] font-medium"
+                  >
+                    Rename
+                  </button>
+                )}
+              </p>
+            )}
+          </div>
         </div>
 
         {/* ---- Invite Form (admin only) ---- */}
