@@ -36,6 +36,7 @@ export interface ViewSettings {
   timescale: 'year-month' | 'year-month-week' | 'month-week-day' | 'quarter-month';
   colorByCodeTypeId?: string;
   zoom: number;
+  wbsBandColors?: string[];
 }
 
 export interface QuickFilterState {

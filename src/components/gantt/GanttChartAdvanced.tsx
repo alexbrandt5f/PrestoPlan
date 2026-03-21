@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState, useMemo } from 'react';
-import { useGanttLayout } from '../../contexts/GanttLayoutContext';
+import { useGanttLayout, DEFAULT_WBS_BAND_COLORS } from '../../contexts/GanttLayoutContext';
 import { supabase } from '../../lib/supabase';
 import { hoursToWorkingDays, getEffectiveDates, isMilestone } from '../../lib/dateUtils';
 
@@ -356,23 +356,30 @@ export default function GanttChartAdvanced({
   }
 
   function getBarColors(activity: Activity): { fill: string; outline: string } {
-    let fill = '#DCFCE7';
-    let outline = '#27AE60';
-
-    if (layout.viewSettings.colorByCodeTypeId && activity[`code_${layout.viewSettings.colorByCodeTypeId}`]) {
-      const codeValue = activity[`code_${layout.viewSettings.colorByCodeTypeId}`];
-      fill = codeColors.get(codeValue) || fill;
-    }
+    let outline = '#3B82F6';
+    let fill = '#3B82F6';
 
     if (activity.activity_status === 'complete') {
-      outline = '#3B82F6';
+      outline = '#6B7280';
+      fill = '#6B7280';
     } else if (activity.is_critical) {
-      outline = '#E74C3C';
+      outline = '#DC2626';
+      fill = '#DC2626';
     } else if (activity.total_float_hours !== null && activity.calendar_id) {
       const calendar = calendarMap.get(activity.calendar_id);
       const floatDays = activity.total_float_hours / (calendar?.hours_per_day || 8);
       if (floatDays <= nearCriticalThreshold) {
-        outline = '#F39C12';
+        outline = '#F59E0B';
+        fill = '#F59E0B';
+      }
+    }
+
+    if (layout.viewSettings.colorByCodeTypeId) {
+      const codeValue = activity[`code_${layout.viewSettings.colorByCodeTypeId}`];
+      if (codeValue) {
+        fill = codeColors.get(codeValue) || fill;
+      } else {
+        fill = '#D1D5DB';
       }
     }
 
@@ -627,6 +634,15 @@ export default function GanttChartAdvanced({
 
       if (y + ROW_HEIGHT < HEADER_HEIGHT || y > height) return;
 
+      if (item.type === 'group') {
+        const bandColors = layout.viewSettings.wbsBandColors || DEFAULT_WBS_BAND_COLORS;
+        const level = item.level || 0;
+        const bgColor = bandColors[Math.min(level, bandColors.length - 1)];
+
+        ctx.fillStyle = bgColor;
+        ctx.fillRect(0, y, 10000, ROW_HEIGHT);
+      }
+
       if (item.type === 'group' && layout.grouping.showSummaryBars && item.activities && item.activities.length > 0) {
         let minStart: Date | null = null;
         let maxFinish: Date | null = null;
@@ -708,17 +724,17 @@ export default function GanttChartAdvanced({
           ctx.fillRect(x1, barY, barWidth, BAR_HEIGHT);
 
           if (progressWidth > 0) {
-            ctx.fillStyle = 'rgba(27, 79, 114, 0.3)';
+            ctx.fillStyle = 'rgba(30, 58, 138, 0.45)';
             ctx.fillRect(x1, barY, progressWidth, BAR_HEIGHT);
           }
 
           ctx.strokeStyle = outline;
-          ctx.lineWidth = 3;
+          ctx.lineWidth = 1.5;
           ctx.strokeRect(x1, barY, barWidth, BAR_HEIGHT);
 
           if (progressWidth > 0) {
-            ctx.strokeStyle = '#1B4F72';
-            ctx.lineWidth = 3;
+            ctx.strokeStyle = '#1E3A8A';
+            ctx.lineWidth = 1.5;
             ctx.beginPath();
             ctx.moveTo(x1, barY);
             ctx.lineTo(x1 + progressWidth, barY);

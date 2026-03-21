@@ -51,6 +51,15 @@ const DEFAULT_QUICK_FILTERS: QuickFilterState = {
   selectedCodeValueIds: [],
 };
 
+export const DEFAULT_WBS_BAND_COLORS = [
+  '#1E3A5F',
+  '#2B6CB0',
+  '#4299E1',
+  '#90CDF4',
+  '#BEE3F8',
+  '#EBF8FF',
+];
+
 const DEFAULT_LAYOUT: GanttLayoutState = {
   columns: DEFAULT_COLUMNS,
   sorts: [{ field: 'early_start', direction: 'asc' }],
@@ -61,7 +70,8 @@ const DEFAULT_LAYOUT: GanttLayoutState = {
     showRelationships: 'selected',
     showDrivingOnly: false,
     timescale: 'year-month-week',
-    zoom: 1
+    zoom: 1,
+    wbsBandColors: DEFAULT_WBS_BAND_COLORS
   },
   quickFilters: DEFAULT_QUICK_FILTERS
 };

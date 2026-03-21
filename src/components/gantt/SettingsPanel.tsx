@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { X, Group, Palette, Eye, Link, ZoomIn, ZoomOut } from 'lucide-react';
-import { useGanttLayout } from '../../contexts/GanttLayoutContext';
+import { useGanttLayout, DEFAULT_WBS_BAND_COLORS } from '../../contexts/GanttLayoutContext';
 import { supabase } from '../../lib/supabase';
 
 interface SettingsPanelProps {
@@ -199,6 +199,39 @@ export default function SettingsPanel({ scheduleVersionId, onClose, onToggleColo
                 />
                 Show Float
               </label>
+            </div>
+          </div>
+
+          <div className="border-t border-gray-200 pt-6">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-gray-900">WBS Band Colors</h3>
+              <button
+                onClick={() => updateViewSettings({ wbsBandColors: DEFAULT_WBS_BAND_COLORS })}
+                className="text-xs text-blue-600 hover:text-blue-800"
+              >
+                Reset to Default
+              </button>
+            </div>
+            <div className="space-y-2">
+              {(layout.viewSettings.wbsBandColors || DEFAULT_WBS_BAND_COLORS).map((color, index) => (
+                <div key={index} className="flex items-center gap-3">
+                  <label className="text-sm text-gray-700 w-16 flex-shrink-0">Level {index}</label>
+                  <div
+                    className="w-8 h-8 rounded border border-gray-300 flex-shrink-0"
+                    style={{ backgroundColor: color }}
+                  />
+                  <input
+                    type="color"
+                    value={color}
+                    onChange={(e) => {
+                      const newColors = [...(layout.viewSettings.wbsBandColors || DEFAULT_WBS_BAND_COLORS)];
+                      newColors[index] = e.target.value;
+                      updateViewSettings({ wbsBandColors: newColors });
+                    }}
+                    className="flex-1 h-8 rounded border border-gray-300 cursor-pointer"
+                  />
+                </div>
+              ))}
             </div>
           </div>
 

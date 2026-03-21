@@ -1,8 +1,17 @@
 import { useRef, useEffect, useState, useMemo, useCallback } from 'react';
 import { ChevronUp, ChevronDown, ChevronRight } from 'lucide-react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { useGanttLayout } from '../../contexts/GanttLayoutContext';
+import { useGanttLayout, DEFAULT_WBS_BAND_COLORS } from '../../contexts/GanttLayoutContext';
 import { hoursToWorkingDays, hoursToDays, formatDate } from '../../lib/dateUtils';
+
+function getTextColorForBg(bgColor: string): string {
+  const hex = bgColor.replace('#', '');
+  const r = parseInt(hex.substring(0, 2), 16);
+  const g = parseInt(hex.substring(2, 4), 16);
+  const b = parseInt(hex.substring(4, 6), 16);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.5 ? '#1A202C' : '#FFFFFF';
+}
 
 interface Activity {
   id: string;
@@ -499,14 +508,16 @@ export default function ActivityTableAdvanced({
               const level = item.level || 0;
               const indent = level * 20;
 
-              const bgColorClass = level === 0 ? 'bg-gray-200' : level === 1 ? 'bg-gray-150' : level === 2 ? 'bg-gray-100' : 'bg-gray-50';
-              const hoverColorClass = level === 0 ? 'hover:bg-gray-300' : level === 1 ? 'hover:bg-gray-200' : 'hover:bg-gray-150';
-              const textSizeClass = level === 0 ? 'text-base font-bold' : level === 1 ? 'text-sm font-semibold' : 'text-xs font-medium';
+              const bandColors = layout.viewSettings.wbsBandColors || DEFAULT_WBS_BAND_COLORS;
+              const bgColor = bandColors[Math.min(level, bandColors.length - 1)];
+              const textColor = getTextColorForBg(bgColor);
+              const fontSize = level === 0 ? '0.875rem' : level === 1 ? '0.8125rem' : '0.75rem';
+              const fontWeight = level <= 1 ? 700 : 600;
 
               return (
                 <div
                   key={`group-${item.groupKey}`}
-                  className={`flex items-center ${bgColorClass} border-b border-gray-300 cursor-pointer ${hoverColorClass}`}
+                  className="flex items-center border-b border-gray-300 cursor-pointer"
                   style={{
                     position: 'absolute',
                     top: 0,
@@ -516,14 +527,20 @@ export default function ActivityTableAdvanced({
                     transform: `translateY(${virtualRow.start}px)`,
                     boxSizing: 'border-box',
                     overflow: 'hidden',
+                    backgroundColor: bgColor,
+                    color: textColor,
                   }}
                   onClick={() => toggleGroup(item.groupKey!)}
                 >
                   <div className="flex items-center gap-2 px-3" style={{ paddingLeft: `${12 + indent}px` }}>
                     <ChevronRight
-                      className={`w-4 h-4 text-gray-600 transition-transform ${isCollapsed ? '' : 'transform rotate-90'}`}
+                      className="w-4 h-4 transition-transform"
+                      style={{
+                        color: textColor,
+                        transform: isCollapsed ? 'none' : 'rotate(90deg)'
+                      }}
                     />
-                    <span className={`${textSizeClass} text-gray-900`}>
+                    <span style={{ fontSize, fontWeight }}>
                       {item.groupLabel} ({(item as any).totalActivities ?? item.activities?.length ?? 0})
                     </span>
                   </div>
