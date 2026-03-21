@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Save, Plus, Trash2, Lock, Unlock } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { Save, Plus, Trash2, Lock, Unlock, ChevronDown, Check } from 'lucide-react';
 import { useGanttLayout } from '../../contexts/GanttLayoutContext';
 import { useLayouts } from '../../hooks/useLayouts';
 import { SaveLayoutModal } from './SaveLayoutModal';
@@ -26,20 +26,38 @@ export function LayoutManager({ projectId, scheduleVersionId, companyId }: Layou
   } = useLayouts(projectId, companyId);
 
   const [showSaveModal, setShowSaveModal] = useState(false);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const currentLayout = [...projectLayouts, ...userLayouts].find(l => l.id === activeLayoutId);
+  const allLayouts = [...projectLayouts, ...userLayouts];
+  const currentLayout = allLayouts.find(l => l.id === activeLayoutId);
   const isCreator = currentLayout?.created_by === user?.id;
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    if (!showDropdown) return;
+    function handleClick(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setShowDropdown(false);
+        setDeleteConfirmId(null);
+      }
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [showDropdown]);
 
   const handleLayoutChange = (layoutId: string) => {
     if (layoutId === 'default') {
       loadDefault();
     } else {
-      const selectedLayout = [...projectLayouts, ...userLayouts].find(l => l.id === layoutId);
+      const selectedLayout = allLayouts.find(l => l.id === layoutId);
       if (selectedLayout) {
         loadLayout(layoutId, selectedLayout.layout_name, selectedLayout.definition);
       }
     }
+    setShowDropdown(false);
+    setDeleteConfirmId(null);
   };
 
   const handleSave = async () => {
@@ -75,14 +93,23 @@ export function LayoutManager({ projectId, scheduleVersionId, companyId }: Layou
     }
   };
 
-  const handleDelete = async () => {
-    if (!activeLayoutId) return;
+  const handleDeleteFromList = async (layoutId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
 
-    const success = await deleteLayout(activeLayoutId);
+    if (deleteConfirmId !== layoutId) {
+      // First click — show confirm state
+      setDeleteConfirmId(layoutId);
+      return;
+    }
+
+    // Second click — actually delete
+    const success = await deleteLayout(layoutId);
     if (success) {
-      loadDefault();
+      if (activeLayoutId === layoutId) {
+        loadDefault();
+      }
       showToast('Layout deleted', 'success');
-      setShowDeleteConfirm(false);
+      setDeleteConfirmId(null);
     } else {
       showToast('Failed to delete layout', 'error');
     }
@@ -99,85 +126,130 @@ export function LayoutManager({ projectId, scheduleVersionId, companyId }: Layou
     }
   };
 
+  /** Render a layout row in the dropdown */
+  function renderLayoutRow(l: any) {
+    const isActive = activeLayoutId === l.id;
+    const canDelete = l.created_by === user?.id;
+    const isConfirming = deleteConfirmId === l.id;
+
+    return (
+      <div
+        key={l.id}
+        className={`flex items-center gap-1 px-2 py-1.5 text-xs cursor-pointer group ${
+          isActive ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-50'
+        }`}
+      >
+        <div
+          className="flex-1 flex items-center gap-1.5 min-w-0"
+          onClick={() => handleLayoutChange(l.id)}
+        >
+          {isActive && <Check className="w-3 h-3 flex-shrink-0 text-blue-600" />}
+          <span className="truncate">{l.layout_name}</span>
+          {l.is_locked && <Lock className="w-3 h-3 flex-shrink-0 text-gray-400" />}
+        </div>
+        {canDelete && (
+          <button
+            onClick={(e) => handleDeleteFromList(l.id, e)}
+            className={`flex-shrink-0 p-0.5 rounded transition-colors ${
+              isConfirming
+                ? 'bg-red-100 text-red-600'
+                : 'opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500'
+            }`}
+            title={isConfirming ? "Click again to confirm delete" : "Delete layout"}
+          >
+            <Trash2 className="w-3 h-3" />
+          </button>
+        )}
+      </div>
+    );
+  }
+
   return (
     <>
-      <div className="flex items-center gap-2">
-        <select
-          value={activeLayoutId || 'default'}
-          onChange={(e) => handleLayoutChange(e.target.value)}
-          className="px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-        >
-          <option value="default">Default</option>
+      <div className="flex items-center gap-1">
+        {/* Custom dropdown */}
+        <div className="relative" ref={dropdownRef}>
+          <button
+            onClick={() => { setShowDropdown(!showDropdown); setDeleteConfirmId(null); }}
+            className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50 min-w-[100px] max-w-[180px]"
+          >
+            <span className="truncate">{activeLayoutName || 'Default'}</span>
+            <ChevronDown className="w-3 h-3 flex-shrink-0 text-gray-400" />
+          </button>
 
-          {projectLayouts.length > 0 && (
-            <>
-              <option disabled>─── Project Layouts ───</option>
-              {projectLayouts.map(layout => (
-                <option key={layout.id} value={layout.id}>
-                  {layout.layout_name} {layout.is_locked ? '🔒' : ''}
-                </option>
-              ))}
-            </>
+          {showDropdown && (
+            <div className="absolute left-0 top-full mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1 max-h-72 overflow-y-auto">
+              {/* Default option */}
+              <div
+                className={`flex items-center gap-1.5 px-2 py-1.5 text-xs cursor-pointer ${
+                  !activeLayoutId ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-50'
+                }`}
+                onClick={() => handleLayoutChange('default')}
+              >
+                {!activeLayoutId && <Check className="w-3 h-3 flex-shrink-0 text-blue-600" />}
+                <span>Default</span>
+              </div>
+
+              {/* Project layouts */}
+              {projectLayouts.length > 0 && (
+                <>
+                  <div className="px-2 py-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider border-t border-gray-100 mt-1">
+                    Project
+                  </div>
+                  {projectLayouts.map(renderLayoutRow)}
+                </>
+              )}
+
+              {/* User layouts */}
+              {userLayouts.length > 0 && (
+                <>
+                  <div className="px-2 py-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider border-t border-gray-100 mt-1">
+                    My Layouts
+                  </div>
+                  {userLayouts.map(renderLayoutRow)}
+                </>
+              )}
+            </div>
           )}
+        </div>
 
-          {userLayouts.length > 0 && (
-            <>
-              <option disabled>─── My Layouts ───</option>
-              {userLayouts.map(layout => (
-                <option key={layout.id} value={layout.id}>
-                  {layout.layout_name} {layout.is_locked ? '🔒' : ''}
-                </option>
-              ))}
-            </>
-          )}
-        </select>
-
-        <div className="flex items-center gap-1 border-l pl-2">
+        {/* Save / Save As / Lock buttons */}
+        <div className="flex items-center gap-0.5">
           <button
             onClick={handleSave}
             disabled={!activeLayoutId}
-            className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-50 disabled:cursor-not-allowed relative"
-            title={activeLayoutId ? "Save" : "Save As"}
+            className="p-1 hover:bg-gray-100 rounded disabled:opacity-30 disabled:cursor-not-allowed relative"
+            title={activeLayoutId ? "Save" : "No layout selected"}
           >
-            <Save className="w-4 h-4" />
+            <Save className="w-3.5 h-3.5 text-gray-500" />
             {isDirty && activeLayoutId && (
-              <span className="absolute top-0 right-0 w-2 h-2 bg-blue-500 rounded-full"></span>
+              <span className="absolute top-0 right-0 w-1.5 h-1.5 bg-blue-500 rounded-full"></span>
             )}
           </button>
 
           <button
             onClick={() => setShowSaveModal(true)}
-            className="p-1.5 hover:bg-gray-100 rounded"
-            title="Save As"
+            className="p-1 hover:bg-gray-100 rounded"
+            title="Save As New Layout"
           >
-            <div className="relative w-4 h-4">
-              <Save className="w-4 h-4" />
-              <Plus className="w-2 h-2 absolute -bottom-0.5 -right-0.5 bg-white" />
+            <div className="relative w-3.5 h-3.5">
+              <Save className="w-3.5 h-3.5 text-gray-500" />
+              <Plus className="w-2 h-2 absolute -bottom-0.5 -right-0.5 bg-white text-gray-500" />
             </div>
           </button>
 
           {isCreator && activeLayoutId && (
-            <>
-              <button
-                onClick={handleToggleLock}
-                className="p-1.5 hover:bg-gray-100 rounded"
-                title={currentLayout?.is_locked ? "Unlock" : "Lock"}
-              >
-                {currentLayout?.is_locked ? (
-                  <Lock className="w-4 h-4" />
-                ) : (
-                  <Unlock className="w-4 h-4" />
-                )}
-              </button>
-
-              <button
-                onClick={() => setShowDeleteConfirm(true)}
-                className="p-1.5 hover:bg-gray-100 rounded text-red-600"
-                title="Delete"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
-            </>
+            <button
+              onClick={handleToggleLock}
+              className="p-1 hover:bg-gray-100 rounded"
+              title={currentLayout?.is_locked ? "Unlock" : "Lock"}
+            >
+              {currentLayout?.is_locked ? (
+                <Lock className="w-3.5 h-3.5 text-gray-500" />
+              ) : (
+                <Unlock className="w-3.5 h-3.5 text-gray-500" />
+              )}
+            </button>
           )}
         </div>
       </div>
@@ -187,31 +259,6 @@ export function LayoutManager({ projectId, scheduleVersionId, companyId }: Layou
         onClose={() => setShowSaveModal(false)}
         onSave={handleSaveAs}
       />
-
-      {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl p-6 max-w-sm">
-            <h3 className="text-lg font-semibold mb-2">Delete Layout?</h3>
-            <p className="text-gray-600 mb-4">
-              Are you sure you want to delete "{currentLayout?.layout_name}"? This action cannot be undone.
-            </p>
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setShowDeleteConfirm(false)}
-                className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-md"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleDelete}
-                className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-md"
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 }
