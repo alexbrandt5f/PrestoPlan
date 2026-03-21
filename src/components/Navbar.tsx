@@ -23,14 +23,15 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useCompany, CompanyWithRole } from '../hooks/useCompany';
 import { useToast } from '../contexts/ToastContext';
-import { Calendar, LogOut, ChevronDown, Check, Building2, User } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { Calendar, LogOut, ChevronDown, Check, Building2, User, Users } from 'lucide-react';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 export function Navbar() {
   const { user, signOut } = useAuth();
   const { company, companies, userRole, setActiveCompany } = useCompany();
   const { showToast } = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
 
   // Company switcher dropdown state
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -210,8 +211,23 @@ export function Navbar() {
             </div>
           )}
 
-          {/* Right: User info and logout */}
+          {/* Right: Nav links + User info + Logout */}
           <div className="flex items-center space-x-4">
+            {/* Team link (admin only, non-personal workspace only) */}
+            {isAdmin && company && !company.is_personal && (
+              <button
+                onClick={() => navigate('/team')}
+                className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
+                  location.pathname === '/team'
+                    ? 'text-[#1B4F72] bg-blue-50'
+                    : 'text-gray-600 hover:text-[#1B4F72] hover:bg-gray-50'
+                }`}
+              >
+                <Users className="w-4 h-4" />
+                <span className="hidden sm:inline">Team</span>
+              </button>
+            )}
+
             <div className="flex items-center space-x-2">
               <div className="w-8 h-8 rounded-full bg-[#2E86C1] flex items-center justify-center text-white font-medium">
                 {getUserInitial()}
