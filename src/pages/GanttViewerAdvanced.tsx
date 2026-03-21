@@ -74,6 +74,7 @@ function GanttViewerContent() {
   const [backgroundLoading, setBackgroundLoading] = useState(false);
   const [quickFilterCodeAssignments, setQuickFilterCodeAssignments] = useState<Map<string, Set<string>>>(new Map());
   const [isQuickFilterOpen, setIsQuickFilterOpen] = useState(false);
+  const [isFilterPinned, setIsFilterPinned] = useState(false);
   const [layouts, setLayouts] = useState<Array<{ id: string; name: string; is_default: boolean; user_id: string | null }>>([]);
 
   const loadedVersionRef = useRef<string | null>(null);
@@ -814,67 +815,70 @@ function GanttViewerContent() {
 
   return (
     <div className="h-screen flex flex-col bg-gray-50">
-      <div className="bg-white border-b border-gray-200 px-4 py-1.5 flex-shrink-0">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 min-w-0">
-            <button
-              onClick={() => navigate(`/project/${projectId}`)}
-              className="p-1 hover:bg-gray-100 rounded transition-colors flex-shrink-0"
-              title="Back to project"
-            >
-              <ArrowLeft className="w-4 h-4 text-gray-500" />
-            </button>
-            <span className="text-sm font-semibold text-gray-900 truncate" title={version?.version_label || ''}>
-              {version?.version_label}
-            </span>
-            {rootWbsName && (
-              <>
-                <span className="text-gray-300 flex-shrink-0">|</span>
-                <span className="text-xs text-gray-500 truncate" title={rootWbsName}>
-                  {rootWbsName}
-                </span>
-              </>
-            )}
-            <span className="text-gray-300 flex-shrink-0">|</span>
-            <span className="text-xs text-gray-400 flex-shrink-0">
-              {groupedActivities.filter(i => i.type === 'activity').length.toLocaleString()} activities
-            </span>
+      {/* QuickFilterPanel is positioned fixed, so render it outside the flow */}
+      <QuickFilterPanel
+        wbsMap={wbsMap}
+        activities={activities}
+        calendars={calendars}
+        scheduleVersionId={versionId || ''}
+        dataDate={version?.data_date || null}
+        nearCriticalThreshold={nearCriticalThreshold}
+        onCodeAssignmentsLoaded={setQuickFilterCodeAssignments}
+        isOpen={isQuickFilterOpen}
+        onClose={() => setIsQuickFilterOpen(false)}
+        onPinnedChange={setIsFilterPinned}
+      />
+
+      {/* Everything shifts right when panel is pinned */}
+      <div
+        className="flex-1 flex flex-col"
+        style={{
+          marginLeft: isFilterPinned ? 272 : 0,
+          transition: 'margin-left 200ms ease',
+        }}
+      >
+        <div className="bg-white border-b border-gray-200 px-4 py-1.5 flex-shrink-0">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 min-w-0">
+              <button
+                onClick={() => navigate(`/project/${projectId}`)}
+                className="p-1 hover:bg-gray-100 rounded transition-colors flex-shrink-0"
+                title="Back to project"
+              >
+                <ArrowLeft className="w-4 h-4 text-gray-500" />
+              </button>
+              <span className="text-sm font-semibold text-gray-900 truncate" title={version?.version_label || ''}>
+                {version?.version_label}
+              </span>
+              {rootWbsName && (
+                <>
+                  <span className="text-gray-300 flex-shrink-0">|</span>
+                  <span className="text-xs text-gray-500 truncate" title={rootWbsName}>
+                    {rootWbsName}
+                  </span>
+                </>
+              )}
+              <span className="text-gray-300 flex-shrink-0">|</span>
+              <span className="text-xs text-gray-400 flex-shrink-0">
+                {groupedActivities.filter(i => i.type === 'activity').length.toLocaleString()} activities
+              </span>
+            </div>
+
+            <GanttToolbar
+              scheduleVersionId={versionId || ''}
+              projectId={projectId || ''}
+              companyId={project?.company_id || ''}
+              onGoToDataDate={handleGoToDataDate}
+              dataDate={version?.data_date || null}
+              onToggleColorLegend={() => setShowColorLegend(!showColorLegend)}
+              onToggleQuickFilters={() => setIsQuickFilterOpen(!isQuickFilterOpen)}
+              versionLabel={version?.version_label || ''}
+              layouts={layouts}
+            />
           </div>
-
-          <GanttToolbar
-            scheduleVersionId={versionId || ''}
-            projectId={projectId || ''}
-            companyId={project?.company_id || ''}
-            onGoToDataDate={handleGoToDataDate}
-            dataDate={version?.data_date || null}
-            onToggleColorLegend={() => setShowColorLegend(!showColorLegend)}
-            onToggleQuickFilters={() => setIsQuickFilterOpen(!isQuickFilterOpen)}
-            versionLabel={version?.version_label || ''}
-            layouts={layouts}
-          />
         </div>
-      </div>
 
-      <div className="flex-1 overflow-hidden relative">
-        <QuickFilterPanel
-          wbsMap={wbsMap}
-          activities={activities}
-          calendars={calendars}
-          scheduleVersionId={versionId || ''}
-          dataDate={version?.data_date || null}
-          nearCriticalThreshold={nearCriticalThreshold}
-          onCodeAssignmentsLoaded={setQuickFilterCodeAssignments}
-          isOpen={isQuickFilterOpen}
-          onClose={() => setIsQuickFilterOpen(false)}
-        />
-
-        <div
-          style={{
-            marginLeft: isQuickFilterOpen ? 280 : 0,
-            transition: 'margin-left 200ms ease',
-            height: '100%'
-          }}
-        >
+        <div className="flex-1 overflow-hidden relative">
           {showColorLegend && layout.viewSettings.colorByCodeTypeId && (
             <ColorLegend
               codeColors={codeColors}
@@ -905,6 +909,7 @@ function GanttViewerContent() {
               groupedActivities={groupedActivities}
               nearCriticalThreshold={nearCriticalThreshold}
               codeColors={codeColors}
+              codeAssignments={codeAssignments}
               onActivitySelect={handleDirectSelect}
             />
           }

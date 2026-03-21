@@ -40,6 +40,7 @@ interface GanttChartAdvancedProps {
   groupedActivities: Array<{ type: 'group' | 'activity'; groupKey?: string; groupLabel?: string; activities?: Activity[]; activity?: Activity }>;
   nearCriticalThreshold: number;
   codeColors: Map<string, string>;
+  codeAssignments: Map<string, Map<string, string>>;
   onActivitySelect?: (activity: Activity) => void;
 }
 
@@ -63,6 +64,7 @@ export default function GanttChartAdvanced({
   groupedActivities,
   nearCriticalThreshold,
   codeColors,
+  codeAssignments,
   onActivitySelect
 }: GanttChartAdvancedProps) {
   const { layout, updateViewSettings } = useGanttLayout();
@@ -356,30 +358,33 @@ export default function GanttChartAdvanced({
   }
 
   function getBarColors(activity: Activity): { fill: string; outline: string } {
-    let outline = '#3B82F6';
-    let fill = '#3B82F6';
+    // Default: non-critical = green
+    let outline = '#16A34A'; // green-600
+    let fill = '#16A34A';
 
     if (activity.activity_status === 'complete') {
-      outline = '#6B7280';
+      outline = '#6B7280'; // gray-500
       fill = '#6B7280';
     } else if (activity.is_critical) {
-      outline = '#DC2626';
+      outline = '#DC2626'; // red-600
       fill = '#DC2626';
     } else if (activity.total_float_hours !== null && activity.calendar_id) {
       const calendar = calendarMap.get(activity.calendar_id);
       const floatDays = activity.total_float_hours / (calendar?.hours_per_day || 8);
       if (floatDays <= nearCriticalThreshold) {
-        outline = '#F59E0B';
-        fill = '#F59E0B';
+        outline = '#EA580C'; // orange-600
+        fill = '#EA580C';
       }
     }
 
+    // Color By Activity Code override
     if (layout.viewSettings.colorByCodeTypeId) {
-      const codeValue = activity[`code_${layout.viewSettings.colorByCodeTypeId}`];
+      const activityCodes = codeAssignments.get(activity.id);
+      const codeValue = activityCodes?.get(layout.viewSettings.colorByCodeTypeId);
       if (codeValue) {
         fill = codeColors.get(codeValue) || fill;
       } else {
-        fill = '#D1D5DB';
+        fill = '#D1D5DB'; // Gray for unassigned
       }
     }
 
@@ -729,7 +734,7 @@ export default function GanttChartAdvanced({
           }
 
           ctx.strokeStyle = outline;
-          ctx.lineWidth = 1.5;
+          ctx.lineWidth = layout.viewSettings.colorByCodeTypeId ? 2.5 : 1.5;
           ctx.strokeRect(x1, barY, barWidth, BAR_HEIGHT);
 
           if (progressWidth > 0) {

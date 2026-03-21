@@ -1,17 +1,41 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
 
 interface SaveLayoutModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (name: string, description: string | null, scope: 'project' | 'user') => Promise<void>;
+  onSave: (name: string, description: string | null, scope: 'project' | 'user', targetUserId?: string) => Promise<void>;
+  companyId: string;
+  userRole: string;
+  currentUserId: string;
 }
 
-export function SaveLayoutModal({ isOpen, onClose, onSave }: SaveLayoutModalProps) {
+export function SaveLayoutModal({ isOpen, onClose, onSave, companyId, userRole, currentUserId }: SaveLayoutModalProps) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [scope, setScope] = useState<'project' | 'user'>('project');
   const [saving, setSaving] = useState(false);
+  const [teamMembers, setTeamMembers] = useState<Array<{ user_id: string; email?: string }>>([]);
+  const [targetUserId, setTargetUserId] = useState('');
+
+  useEffect(() => {
+    if (!isOpen) return;
+    async function fetchTeam() {
+      const { data } = await supabase
+        .from('company_memberships')
+        .select('user_id, users!inner(email)')
+        .eq('company_id', companyId)
+        .eq('is_active', true);
+      if (data) {
+        setTeamMembers(data.map(d => ({
+          user_id: d.user_id,
+          email: (d.users as any)?.email
+        })).filter(m => m.user_id !== currentUserId));
+      }
+    }
+    fetchTeam();
+  }, [isOpen, companyId, currentUserId]);
 
   if (!isOpen) return null;
 
@@ -20,10 +44,11 @@ export function SaveLayoutModal({ isOpen, onClose, onSave }: SaveLayoutModalProp
 
     setSaving(true);
     try {
-      await onSave(name.trim(), description.trim() || null, scope);
+      await onSave(name.trim(), description.trim() || null, scope, targetUserId || undefined);
       setName('');
       setDescription('');
       setScope('project');
+      setTargetUserId('');
       onClose();
     } finally {
       setSaving(false);
@@ -34,6 +59,7 @@ export function SaveLayoutModal({ isOpen, onClose, onSave }: SaveLayoutModalProp
     setName('');
     setDescription('');
     setScope('project');
+    setTargetUserId('');
     onClose();
   };
 
@@ -111,6 +137,24 @@ export function SaveLayoutModal({ isOpen, onClose, onSave }: SaveLayoutModalProp
               </label>
             </div>
           </div>
+
+          {(userRole === 'pro' || userRole === 'admin') && scope === 'user' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Save for user (optional)
+              </label>
+              <select
+                value={targetUserId}
+                onChange={(e) => setTargetUserId(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Myself</option>
+                {teamMembers.map(m => (
+                  <option key={m.user_id} value={m.user_id}>{m.email || m.user_id}</option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
 
         <div className="flex justify-end gap-2 p-4 border-t bg-gray-50">

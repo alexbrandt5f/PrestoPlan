@@ -23,6 +23,7 @@ export function LayoutManager({ projectId, scheduleVersionId, companyId }: Layou
     updateLayout,
     toggleLock,
     deleteLayout,
+    userRole,
   } = useLayouts(projectId, companyId);
 
   const [showSaveModal, setShowSaveModal] = useState(false);
@@ -33,6 +34,8 @@ export function LayoutManager({ projectId, scheduleVersionId, companyId }: Layou
   const allLayouts = [...projectLayouts, ...userLayouts];
   const currentLayout = allLayouts.find(l => l.id === activeLayoutId);
   const isCreator = currentLayout?.created_by === user?.id;
+  const canEditActive = isCreator ||
+    (currentLayout?.scope === 'project' && (userRole === 'pro' || userRole === 'admin'));
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -79,11 +82,11 @@ export function LayoutManager({ projectId, scheduleVersionId, companyId }: Layou
     }
   };
 
-  const handleSaveAs = async (name: string, description: string | null, scope: 'project' | 'user') => {
+  const handleSaveAs = async (name: string, description: string | null, scope: 'project' | 'user', targetUserId?: string) => {
     const newLayout = await createLayout(name, description, scope, {
       ...layout,
       quickFilters: layout.quickFilters || null,
-    });
+    }, targetUserId);
 
     if (newLayout) {
       loadLayout(newLayout.id, newLayout.layout_name, newLayout.definition);
@@ -129,7 +132,8 @@ export function LayoutManager({ projectId, scheduleVersionId, companyId }: Layou
   /** Render a layout row in the dropdown */
   function renderLayoutRow(l: any) {
     const isActive = activeLayoutId === l.id;
-    const canDelete = l.created_by === user?.id;
+    const canDelete = l.created_by === user?.id ||
+      (l.scope === 'project' && (userRole === 'pro' || userRole === 'admin'));
     const isConfirming = deleteConfirmId === l.id;
 
     return (
@@ -217,12 +221,12 @@ export function LayoutManager({ projectId, scheduleVersionId, companyId }: Layou
         <div className="flex items-center gap-0.5">
           <button
             onClick={handleSave}
-            disabled={!activeLayoutId}
+            disabled={!activeLayoutId || !canEditActive || (currentLayout?.is_locked && !isCreator)}
             className="p-1 hover:bg-gray-100 rounded disabled:opacity-30 disabled:cursor-not-allowed relative"
-            title={activeLayoutId ? "Save" : "No layout selected"}
+            title={!activeLayoutId ? "No layout selected" : !canEditActive ? "No permission" : "Save"}
           >
             <Save className="w-3.5 h-3.5 text-gray-500" />
-            {isDirty && activeLayoutId && (
+            {isDirty && activeLayoutId && canEditActive && (
               <span className="absolute top-0 right-0 w-1.5 h-1.5 bg-blue-500 rounded-full"></span>
             )}
           </button>
@@ -258,6 +262,9 @@ export function LayoutManager({ projectId, scheduleVersionId, companyId }: Layou
         isOpen={showSaveModal}
         onClose={() => setShowSaveModal(false)}
         onSave={handleSaveAs}
+        companyId={companyId}
+        userRole={userRole}
+        currentUserId={user?.id || ''}
       />
     </>
   );

@@ -13,6 +13,7 @@ interface QuickFilterPanelProps {
   onCodeAssignmentsLoaded: (assignments: Map<string, Set<string>>) => void;
   isOpen: boolean;
   onClose: () => void;
+  onPinnedChange?: (pinned: boolean) => void;
 }
 
 interface CodeValue {
@@ -36,7 +37,8 @@ export function QuickFilterPanel({
   nearCriticalThreshold,
   onCodeAssignmentsLoaded,
   isOpen,
-  onClose
+  onClose,
+  onPinnedChange
 }: QuickFilterPanelProps) {
   const { layout, updateQuickFilters } = useGanttLayout();
   const qf = layout.quickFilters;
@@ -366,7 +368,11 @@ export function QuickFilterPanel({
             </button>
           )}
           <button
-            onClick={() => setIsPinned(!isPinned)}
+            onClick={() => {
+              const newPinned = !isPinned;
+              setIsPinned(newPinned);
+              onPinnedChange?.(newPinned);
+            }}
             className="p-1 hover:bg-gray-200 rounded text-gray-400 hover:text-gray-600 transition-colors"
             title={isPinned ? "Unpin panel" : "Pin panel open"}
           >

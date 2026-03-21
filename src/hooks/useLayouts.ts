@@ -18,6 +18,7 @@ export function useLayouts(projectId: string, companyId: string) {
   const { user } = useAuth();
   const [layouts, setLayouts] = useState<Layout[]>([]);
   const [loading, setLoading] = useState(true);
+  const [userRole, setUserRole] = useState<string>('basic');
 
   const fetchLayouts = useCallback(async () => {
     if (!projectId || !companyId) return;
@@ -40,6 +41,20 @@ export function useLayouts(projectId: string, companyId: string) {
     fetchLayouts();
   }, [fetchLayouts]);
 
+  useEffect(() => {
+    async function fetchRole() {
+      if (!user?.id || !companyId) return;
+      const { data } = await supabase
+        .from('company_memberships')
+        .select('role')
+        .eq('user_id', user.id)
+        .eq('company_id', companyId)
+        .maybeSingle();
+      if (data) setUserRole(data.role);
+    }
+    fetchRole();
+  }, [user?.id, companyId]);
+
   const projectLayouts = layouts.filter(l => l.scope === 'project');
   const userLayouts = layouts.filter(l => l.scope === 'user' && l.created_by === user?.id);
 
@@ -47,14 +62,15 @@ export function useLayouts(projectId: string, companyId: string) {
     name: string,
     description: string | null,
     scope: 'project' | 'user',
-    definition: any
+    definition: any,
+    targetUserId?: string
   ): Promise<Layout | null> {
     const { data, error } = await supabase
       .from('layouts')
       .insert({
         project_id: projectId,
         company_id: companyId,
-        created_by: user?.id,
+        created_by: targetUserId || user?.id,
         layout_name: name,
         description,
         scope,
@@ -76,6 +92,12 @@ export function useLayouts(projectId: string, companyId: string) {
     const layout = layouts.find(l => l.id === layoutId);
     if (!layout) return false;
 
+    // Basic users can only update their own layouts
+    if (userRole === 'basic' && layout.scope === 'project' && layout.created_by !== user?.id) {
+      return false;
+    }
+
+    // Lock check: only creator can update a locked layout (even pro users)
     if (layout.is_locked && layout.created_by !== user?.id) {
       return false;
     }
@@ -114,7 +136,17 @@ export function useLayouts(projectId: string, companyId: string) {
 
   async function deleteLayout(layoutId: string): Promise<boolean> {
     const layout = layouts.find(l => l.id === layoutId);
-    if (!layout || layout.created_by !== user?.id) return false;
+    if (!layout) return false;
+
+    // Basic users can only delete their own layouts
+    if (userRole === 'basic' && layout.scope === 'project' && layout.created_by !== user?.id) {
+      return false;
+    }
+
+    // Pro/admin can delete any project layout, but only their own user layouts
+    if (layout.scope === 'user' && layout.created_by !== user?.id) {
+      return false;
+    }
 
     const { error } = await supabase
       .from('layouts')
@@ -156,6 +188,7 @@ export function useLayouts(projectId: string, companyId: string) {
     projectLayouts,
     userLayouts,
     loading,
+    userRole,
     createLayout,
     updateLayout,
     toggleLock,
