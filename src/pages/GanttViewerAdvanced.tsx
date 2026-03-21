@@ -937,6 +937,7 @@ function GanttViewerContent() {
                 nearCriticalThreshold={nearCriticalThreshold}
                 onSelectActivity={handleSelectActivityFromTrace}
                 tracedActivityIds={tracedActivityIds}
+                wbsMap={wbsMap}
               />
             ) : (
               <div className="h-full flex items-center justify-center text-gray-500">
