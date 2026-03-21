@@ -357,38 +357,44 @@ export default function GanttChartAdvanced({
            activity.original_duration_hours === 0;
   }
 
-  function getBarColors(activity: Activity): { fill: string; outline: string } {
-    // Default: non-critical = green
-    let outline = '#16A34A'; // green-600
-    let fill = '#16A34A';
+  function getBarColors(activity: Activity): { fill: string; outline: string; completedFill: string; completedOutline: string } {
+    // Determine criticality colors for incomplete portion
+    let incompleteFill = '#16A34A'; // green-600 (non-critical default)
+    let incompleteOutline = '#16A34A';
 
-    if (activity.activity_status === 'complete') {
-      outline = '#6B7280'; // gray-500
-      fill = '#6B7280';
-    } else if (activity.is_critical) {
-      outline = '#DC2626'; // red-600
-      fill = '#DC2626';
+    if (activity.is_critical) {
+      incompleteOutline = '#DC2626'; // red-600 (critical)
+      incompleteFill = '#DC2626';
     } else if (activity.total_float_hours !== null && activity.calendar_id) {
       const calendar = calendarMap.get(activity.calendar_id);
       const floatDays = activity.total_float_hours / (calendar?.hours_per_day || 8);
       if (floatDays <= nearCriticalThreshold) {
-        outline = '#EA580C'; // orange-600
-        fill = '#EA580C';
+        incompleteOutline = '#EA580C'; // orange-600 (near-critical)
+        incompleteFill = '#EA580C';
       }
     }
 
-    // Color By Activity Code override
+    // Completed portion is always dark blue
+    const completedOutline = '#1E3A8A'; // blue-900
+    const completedFill = '#1E3A8A';
+
+    // Color By Activity Code override for fill only
     if (layout.viewSettings.colorByCodeTypeId) {
       const activityCodes = codeAssignments.get(activity.id);
       const codeValue = activityCodes?.get(layout.viewSettings.colorByCodeTypeId);
       if (codeValue) {
-        fill = codeColors.get(codeValue) || fill;
+        incompleteFill = codeColors.get(codeValue) || '#D1D5DB';
       } else {
-        fill = '#D1D5DB'; // Gray for unassigned
+        incompleteFill = '#D1D5DB'; // Gray for unassigned
       }
     }
 
-    return { fill, outline };
+    return {
+      fill: incompleteFill,
+      outline: incompleteOutline,
+      completedFill,
+      completedOutline
+    };
   }
 
   function handleMouseMove(e: React.MouseEvent) {
@@ -683,7 +689,7 @@ export default function GanttChartAdvanced({
         const x2 = dateToX(finishDate) - scrollLeft;
 
         const isActivityMilestone = isMilestone(activity);
-        const { fill, outline } = getBarColors(activity);
+        const { fill, outline, completedFill, completedOutline } = getBarColors(activity);
 
         if (isActivityMilestone) {
           const centerX = x1;
@@ -725,27 +731,33 @@ export default function GanttChartAdvanced({
             }
           }
 
-          ctx.fillStyle = fill;
-          ctx.fillRect(x1, barY, barWidth, BAR_HEIGHT);
+          // Draw incomplete portion first (right side or entire bar if not in progress)
+          const incompleteWidth = barWidth - progressWidth;
+          if (incompleteWidth > 0) {
+            ctx.fillStyle = fill;
+            ctx.fillRect(x1 + progressWidth, barY, incompleteWidth, BAR_HEIGHT);
 
-          if (progressWidth > 0) {
-            ctx.fillStyle = 'rgba(30, 58, 138, 0.45)';
-            ctx.fillRect(x1, barY, progressWidth, BAR_HEIGHT);
+            ctx.strokeStyle = outline;
+            ctx.lineWidth = layout.viewSettings.colorByCodeTypeId ? 2.5 : 1.5;
+            ctx.strokeRect(x1 + progressWidth, barY, incompleteWidth, BAR_HEIGHT);
           }
 
-          ctx.strokeStyle = outline;
-          ctx.lineWidth = layout.viewSettings.colorByCodeTypeId ? 2.5 : 1.5;
-          ctx.strokeRect(x1, barY, barWidth, BAR_HEIGHT);
-
+          // Draw completed portion (left side)
           if (progressWidth > 0) {
-            ctx.strokeStyle = '#1E3A8A';
-            ctx.lineWidth = 1.5;
-            ctx.beginPath();
-            ctx.moveTo(x1, barY);
-            ctx.lineTo(x1 + progressWidth, barY);
-            ctx.lineTo(x1 + progressWidth, barY + BAR_HEIGHT);
-            ctx.lineTo(x1, barY + BAR_HEIGHT);
-            ctx.stroke();
+            // Fill with completed color (dark blue or code color with dark blue outline)
+            if (layout.viewSettings.colorByCodeTypeId) {
+              // When color by code is on, use code color for fill
+              ctx.fillStyle = fill;
+            } else {
+              // When color by code is off, use dark blue for fill
+              ctx.fillStyle = completedFill;
+            }
+            ctx.fillRect(x1, barY, progressWidth, BAR_HEIGHT);
+
+            // Always use dark blue outline for completed portion
+            ctx.strokeStyle = completedOutline;
+            ctx.lineWidth = layout.viewSettings.colorByCodeTypeId ? 2.5 : 1.5;
+            ctx.strokeRect(x1, barY, progressWidth, BAR_HEIGHT);
           }
 
           if (layout.viewSettings.showFloat && activity.total_float_hours && activity.total_float_hours > 0) {
