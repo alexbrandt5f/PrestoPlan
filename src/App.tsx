@@ -10,6 +10,7 @@ import { Dashboard } from './pages/Dashboard';
 import { ProjectDetail } from './pages/ProjectDetail';
 import GanttViewerAdvanced from './pages/GanttViewerAdvanced';
 import SharedLinkResolver from './pages/SharedLinkResolver';
+import { TeamManagement } from './pages/TeamManagement';
 
 function App() {
   return (
@@ -43,6 +44,14 @@ function App() {
               element={
                 <ProtectedRoute>
                   <GanttViewerAdvanced />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/team"
+              element={
+                <ProtectedRoute>
+                  <TeamManagement />
                 </ProtectedRoute>
               }
             />
