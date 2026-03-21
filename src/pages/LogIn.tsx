@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { Loader2, Calendar } from 'lucide-react';
@@ -11,6 +11,7 @@ export function LogIn() {
   const { signIn } = useAuth();
   const { showToast } = useToast();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -29,7 +30,8 @@ export function LogIn() {
         showToast(error.message, 'error');
       } else {
         showToast('Successfully logged in', 'success');
-        navigate('/dashboard');
+        const returnTo = searchParams.get('returnTo');
+        navigate(returnTo || '/dashboard');
       }
     } catch (error) {
       showToast('An unexpected error occurred', 'error');

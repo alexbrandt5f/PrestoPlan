@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
@@ -52,7 +52,8 @@ function GanttViewerContent() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { showToast } = useToast();
-  const { layout } = useGanttLayout();
+  const { layout, loadLayout } = useGanttLayout();
+  const [searchParams] = useSearchParams();
 
   const [loading, setLoading] = useState(true);
   const [loadingProgress, setLoadingProgress] = useState(0);
@@ -73,10 +74,12 @@ function GanttViewerContent() {
   const [backgroundLoading, setBackgroundLoading] = useState(false);
   const [quickFilterCodeAssignments, setQuickFilterCodeAssignments] = useState<Map<string, Set<string>>>(new Map());
   const [isQuickFilterOpen, setIsQuickFilterOpen] = useState(false);
+  const [layouts, setLayouts] = useState<Array<{ id: string; name: string; is_default: boolean; user_id: string | null }>>([]);
 
   const loadedVersionRef = useRef<string | null>(null);
   const mountedRef = useRef(true);
   const colorCacheRef = useRef<Map<string, { assignments: Map<string, Map<string, string>>; colors: Map<string, string>; typeName: string }>>(new Map());
+  const layoutLoadedRef = useRef(false);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -91,9 +94,26 @@ function GanttViewerContent() {
     // Only load if we haven't loaded this version yet
     if (loadedVersionRef.current !== versionId) {
       loadedVersionRef.current = versionId;
+      layoutLoadedRef.current = false;
       loadData();
     }
   }, [user, projectId, versionId]);
+
+  useEffect(() => {
+    if (!loading && !layoutLoadedRef.current && projectId && user) {
+      const layoutIdFromUrl = searchParams.get('layout');
+      if (layoutIdFromUrl) {
+        loadLayoutFromUrl(layoutIdFromUrl);
+      }
+      layoutLoadedRef.current = true;
+    }
+  }, [loading, projectId, user]);
+
+  useEffect(() => {
+    if (projectId && user) {
+      loadAvailableLayouts();
+    }
+  }, [projectId, user]);
 
   useEffect(() => {
     if (!layout.viewSettings.colorByCodeTypeId) {
@@ -114,6 +134,43 @@ function GanttViewerContent() {
 
     loadColorByCodeType(codeTypeId);
   }, [layout.viewSettings.colorByCodeTypeId]);
+
+  async function loadAvailableLayouts() {
+    try {
+      const { data: layoutsData, error } = await supabase
+        .from('layouts')
+        .select('id, name, is_default, user_id')
+        .eq('project_id', projectId)
+        .or(`user_id.is.null,user_id.eq.${user?.id}`)
+        .order('name');
+
+      if (error) throw error;
+
+      if (layoutsData) {
+        setLayouts(layoutsData);
+      }
+    } catch (error) {
+      console.error('Error loading layouts:', error);
+    }
+  }
+
+  async function loadLayoutFromUrl(layoutId: string) {
+    try {
+      const { data: layoutData, error } = await supabase
+        .from('layouts')
+        .select('*')
+        .eq('id', layoutId)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      if (layoutData && layoutData.definition) {
+        loadLayout(layoutId, layoutData.name, layoutData.definition);
+      }
+    } catch (error) {
+      console.error('Error loading layout from URL:', error);
+    }
+  }
 
   async function loadData() {
     if (!mountedRef.current) return;
@@ -789,6 +846,8 @@ function GanttViewerContent() {
             dataDate={version?.data_date || null}
             onToggleColorLegend={() => setShowColorLegend(!showColorLegend)}
             onToggleQuickFilters={() => setIsQuickFilterOpen(!isQuickFilterOpen)}
+            versionLabel={version?.version_label || ''}
+            layouts={layouts}
           />
         </div>
       </div>

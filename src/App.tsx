@@ -9,6 +9,7 @@ import { UpdatePassword } from './pages/UpdatePassword';
 import { Dashboard } from './pages/Dashboard';
 import { ProjectDetail } from './pages/ProjectDetail';
 import GanttViewerAdvanced from './pages/GanttViewerAdvanced';
+import SharedLinkResolver from './pages/SharedLinkResolver';
 
 function App() {
   return (
@@ -20,6 +21,7 @@ function App() {
             <Route path="/login" element={<LogIn />} />
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/update-password" element={<UpdatePassword />} />
+            <Route path="/v/:shortcode" element={<SharedLinkResolver />} />
             <Route
               path="/dashboard"
               element={
