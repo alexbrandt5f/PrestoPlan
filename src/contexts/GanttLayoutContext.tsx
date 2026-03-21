@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { GanttLayoutState, ColumnDefinition, SortConfig, FilterCondition, GroupConfig, ViewSettings } from '../types/gantt';
+import { GanttLayoutState, ColumnDefinition, SortConfig, FilterCondition, GroupConfig, ViewSettings, QuickFilterState } from '../types/gantt';
 
 interface GanttLayoutContextType {
   layout: GanttLayoutState;
@@ -11,6 +11,7 @@ interface GanttLayoutContextType {
   updateFilters: (filters: FilterCondition[]) => void;
   updateGrouping: (grouping: GroupConfig) => void;
   updateViewSettings: (settings: Partial<ViewSettings>) => void;
+  updateQuickFilters: (filters: Partial<QuickFilterState>) => void;
   resetLayout: () => void;
   loadLayout: (layoutId: string, name: string, definition: GanttLayoutState) => void;
   loadDefault: () => void;
@@ -41,6 +42,15 @@ const DEFAULT_COLUMNS: ColumnDefinition[] = [
   { id: 'free_float_days', label: 'Free Float', field: 'free_float_hours', width: 75, visible: false, dataType: 'duration', source: 'activity' },
 ];
 
+const DEFAULT_QUICK_FILTERS: QuickFilterState = {
+  selectedWbsIds: [],
+  activityStatus: 'all',
+  criticality: 'all',
+  timeframe: 'all',
+  activityCodeTypeId: null,
+  selectedCodeValueIds: [],
+};
+
 const DEFAULT_LAYOUT: GanttLayoutState = {
   columns: DEFAULT_COLUMNS,
   sorts: [{ field: 'early_start', direction: 'asc' }],
@@ -52,7 +62,8 @@ const DEFAULT_LAYOUT: GanttLayoutState = {
     showDrivingOnly: false,
     timescale: 'year-month-week',
     zoom: 1
-  }
+  },
+  quickFilters: DEFAULT_QUICK_FILTERS
 };
 
 export function GanttLayoutProvider({ children, scheduleVersionId }: { children: ReactNode; scheduleVersionId: string }) {
@@ -94,6 +105,11 @@ export function GanttLayoutProvider({ children, scheduleVersionId }: { children:
         // If no columns at all, use defaults
         if (!parsedLayout.columns || parsedLayout.columns.length === 0) {
           parsedLayout.columns = DEFAULT_COLUMNS;
+        }
+
+        // Ensure quickFilters exists
+        if (!parsedLayout.quickFilters) {
+          parsedLayout.quickFilters = DEFAULT_QUICK_FILTERS;
         }
 
         setLayout(parsedLayout);
@@ -152,6 +168,14 @@ export function GanttLayoutProvider({ children, scheduleVersionId }: { children:
     setIsDirty(true);
   };
 
+  const updateQuickFilters = (filters: Partial<QuickFilterState>) => {
+    setLayout(prev => ({
+      ...prev,
+      quickFilters: { ...prev.quickFilters, ...filters }
+    }));
+    setIsDirty(true);
+  };
+
   const resetLayout = () => {
     setLayout(DEFAULT_LAYOUT);
     setIsDirty(true);
@@ -192,6 +216,7 @@ export function GanttLayoutProvider({ children, scheduleVersionId }: { children:
         updateFilters,
         updateGrouping,
         updateViewSettings,
+        updateQuickFilters,
         resetLayout,
         loadLayout,
         loadDefault,

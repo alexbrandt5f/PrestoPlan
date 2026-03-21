@@ -38,11 +38,20 @@ export interface ViewSettings {
   zoom: number;
 }
 
+export interface QuickFilterState {
+  selectedWbsIds: string[];
+  activityStatus: 'all' | 'not_completed' | 'in_progress' | 'completed' | 'not_started';
+  criticality: 'all' | 'critical' | 'crit_and_near_critical' | 'non_critical';
+  timeframe: 'all' | '3_week_lookahead' | '3_month_lookahead' | '1_month_lookback';
+  activityCodeTypeId: string | null;
+  selectedCodeValueIds: string[];
+}
+
 export interface GanttLayoutState {
   columns: ColumnDefinition[];
   sorts: SortConfig[];
   filters: FilterCondition[];
   grouping: GroupConfig;
   viewSettings: ViewSettings;
-  quickFilters?: any;
+  quickFilters: QuickFilterState;
 }

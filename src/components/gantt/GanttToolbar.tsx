@@ -13,15 +13,22 @@ interface GanttToolbarProps {
   onGoToDataDate: () => void;
   dataDate: string | null;
   onToggleColorLegend?: () => void;
+  onToggleQuickFilters: () => void;
 }
 
-export default function GanttToolbar({ scheduleVersionId, projectId, companyId, onGoToDataDate, dataDate, onToggleColorLegend }: GanttToolbarProps) {
+export default function GanttToolbar({ scheduleVersionId, projectId, companyId, onGoToDataDate, dataDate, onToggleColorLegend, onToggleQuickFilters }: GanttToolbarProps) {
   const { layout, updateColumns, updateFilters } = useGanttLayout();
   const [showColumnPicker, setShowColumnPicker] = useState(false);
   const [showFilterBuilder, setShowFilterBuilder] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
 
   const activeFilterCount = layout.filters.length;
+  const qf = layout.quickFilters;
+  const hasActiveQuickFilters = qf.selectedWbsIds.length > 0 ||
+    qf.activityStatus !== 'all' ||
+    qf.criticality !== 'all' ||
+    qf.timeframe !== 'all' ||
+    qf.selectedCodeValueIds.length > 0;
 
   return (
     <>
@@ -33,6 +40,17 @@ export default function GanttToolbar({ scheduleVersionId, projectId, companyId, 
         />
 
         <div className="h-6 w-px bg-gray-300 mx-1"></div>
+
+        <button
+          onClick={onToggleQuickFilters}
+          className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 relative"
+        >
+          <FilterIcon className="w-4 h-4" />
+          Filters
+          {hasActiveQuickFilters && (
+            <span className="absolute -top-1 -right-1 w-2 h-2 bg-blue-500 rounded-full"></span>
+          )}
+        </button>
 
         <button
           onClick={() => setShowColumnPicker(true)}

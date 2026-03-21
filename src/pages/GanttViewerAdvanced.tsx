@@ -11,6 +11,7 @@ import GanttChartAdvanced from '../components/gantt/GanttChartAdvanced';
 import ActivityDetailTabs from '../components/gantt/ActivityDetailTabs';
 import GanttToolbar from '../components/gantt/GanttToolbar';
 import ColorLegend from '../components/gantt/ColorLegend';
+import { QuickFilterPanel } from '../components/gantt/QuickFilterPanel';
 
 interface Activity {
   id: string;
@@ -70,6 +71,8 @@ function GanttViewerContent() {
   const [codeTypeName, setCodeTypeName] = useState('');
   const [tracedActivityIds, setTracedActivityIds] = useState<Set<string>>(new Set());
   const [backgroundLoading, setBackgroundLoading] = useState(false);
+  const [quickFilterCodeAssignments, setQuickFilterCodeAssignments] = useState<Map<string, Set<string>>>(new Map());
+  const [isQuickFilterOpen, setIsQuickFilterOpen] = useState(false);
 
   const loadedVersionRef = useRef<string | null>(null);
   const mountedRef = useRef(true);
@@ -416,6 +419,97 @@ function GanttViewerContent() {
     console.log('DEBUG: groupedActivities input - processedActivities:', processedActivities.length, 'grouping type:', layout.grouping.type, 'wbsMap size:', wbsMap.size);
     let result = [...processedActivities];
 
+    const qf = layout.quickFilters;
+
+    if (qf.selectedWbsIds.length > 0) {
+      const selectedWbsSet = new Set<string>();
+
+      function addDescendants(wbsId: string) {
+        selectedWbsSet.add(wbsId);
+        wbsMap.forEach((wbs, id) => {
+          if (wbs.parent_wbs_id === wbsId) {
+            addDescendants(id);
+          }
+        });
+      }
+
+      qf.selectedWbsIds.forEach(id => addDescendants(id));
+      result = result.filter(a => a.wbs_id && selectedWbsSet.has(a.wbs_id));
+    }
+
+    if (qf.activityStatus !== 'all') {
+      result = result.filter(a => {
+        switch (qf.activityStatus) {
+          case 'not_completed': return a.activity_status !== 'complete';
+          case 'in_progress': return a.activity_status === 'in_progress';
+          case 'completed': return a.activity_status === 'complete';
+          case 'not_started': return a.activity_status === 'not_started';
+          default: return true;
+        }
+      });
+    }
+
+    if (qf.criticality !== 'all') {
+      result = result.filter(a => {
+        const calendar = calendars.find(c => c.id === a.calendar_id);
+        const hoursPerDay = calendar?.hours_per_day || 8;
+        const floatDays = (a.total_float_hours || 0) / hoursPerDay;
+
+        switch (qf.criticality) {
+          case 'critical':
+            return floatDays <= 0 || a.is_critical === true;
+          case 'crit_and_near_critical':
+            return floatDays <= nearCriticalThreshold;
+          case 'non_critical':
+            return floatDays > 0 && a.is_critical !== true;
+          default: return true;
+        }
+      });
+    }
+
+    if (qf.timeframe !== 'all' && version?.data_date) {
+      const dataDateMs = new Date(version.data_date).getTime();
+      const DAY_MS = 86400000;
+      let windowStart: number;
+      let windowEnd: number;
+
+      switch (qf.timeframe) {
+        case '3_week_lookahead':
+          windowStart = dataDateMs - (7 * DAY_MS);
+          windowEnd = dataDateMs + (21 * DAY_MS);
+          break;
+        case '3_month_lookahead':
+          windowStart = dataDateMs - (14 * DAY_MS);
+          windowEnd = dataDateMs + (90 * DAY_MS);
+          break;
+        case '1_month_lookback':
+          windowStart = dataDateMs - (30 * DAY_MS);
+          windowEnd = dataDateMs;
+          break;
+        default:
+          windowStart = -Infinity;
+          windowEnd = Infinity;
+      }
+
+      result = result.filter(a => {
+        const start = a.actual_start || a.early_start;
+        const finish = a.actual_finish || a.early_finish;
+        if (!start || !finish) return false;
+        const startMs = new Date(start).getTime();
+        const finishMs = new Date(finish).getTime();
+        return startMs <= windowEnd && finishMs >= windowStart;
+      });
+    }
+
+    if (qf.selectedCodeValueIds.length > 0 && quickFilterCodeAssignments.size > 0) {
+      const matchingActivityIds = new Set<string>();
+      qf.selectedCodeValueIds.forEach(cvId => {
+        const actIds = quickFilterCodeAssignments.get(cvId);
+        if (actIds) actIds.forEach(id => matchingActivityIds.add(id));
+      });
+      result = result.filter(a => matchingActivityIds.has(a.id));
+    }
+
     if (layout.filters.length > 0) {
       result = result.filter(activity => {
         return layout.filters.every((filter, index) => {
@@ -590,7 +684,7 @@ function GanttViewerContent() {
 
     console.log('DEBUG: groupedActivities output length:', finalResult.length);
     return finalResult;
-  }, [processedActivities, layout.grouping, layout.filters, layout.sorts, codeAssignments, wbsMap]);
+  }, [processedActivities, layout.grouping, layout.filters, layout.sorts, layout.quickFilters, codeAssignments, wbsMap, calendars, version?.data_date, nearCriticalThreshold, quickFilterCodeAssignments]);
 
   function evaluateFilter(value: any, operator: string, filterValue: any, filterValue2?: any): boolean {
     if (operator === 'isBlank') return value === null || value === undefined || value === '';
@@ -694,19 +788,39 @@ function GanttViewerContent() {
             onGoToDataDate={handleGoToDataDate}
             dataDate={version?.data_date || null}
             onToggleColorLegend={() => setShowColorLegend(!showColorLegend)}
+            onToggleQuickFilters={() => setIsQuickFilterOpen(!isQuickFilterOpen)}
           />
         </div>
       </div>
 
       <div className="flex-1 overflow-hidden relative">
-        {showColorLegend && layout.viewSettings.colorByCodeTypeId && (
-          <ColorLegend
-            codeColors={codeColors}
-            codeTypeName={codeTypeName}
-            onClose={() => setShowColorLegend(false)}
-          />
-        )}
-        <ResizablePanels
+        <QuickFilterPanel
+          wbsMap={wbsMap}
+          activities={activities}
+          calendars={calendars}
+          scheduleVersionId={versionId || ''}
+          dataDate={version?.data_date || null}
+          nearCriticalThreshold={nearCriticalThreshold}
+          onCodeAssignmentsLoaded={setQuickFilterCodeAssignments}
+          isOpen={isQuickFilterOpen}
+          onClose={() => setIsQuickFilterOpen(false)}
+        />
+
+        <div
+          style={{
+            marginLeft: isQuickFilterOpen ? 280 : 0,
+            transition: 'margin-left 200ms ease',
+            height: '100%'
+          }}
+        >
+          {showColorLegend && layout.viewSettings.colorByCodeTypeId && (
+            <ColorLegend
+              codeColors={codeColors}
+              codeTypeName={codeTypeName}
+              onClose={() => setShowColorLegend(false)}
+            />
+          )}
+          <ResizablePanels
           leftPanel={
             <ActivityTableAdvanced
               activities={processedActivities}
@@ -749,6 +863,7 @@ function GanttViewerContent() {
             )
           }
         />
+        </div>
       </div>
     </div>
   );
