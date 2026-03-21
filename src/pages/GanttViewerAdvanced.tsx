@@ -652,7 +652,12 @@ function GanttViewerContent() {
         const wbs = wbsMap.get(wbsId);
         if (!wbs) return;
 
-        const directActivities = sortActivities(wbsActivities.get(wbsId) || []);
+        const rawActivities = wbsActivities.get(wbsId) || [];
+        const directActivities = sortActivities(rawActivities);
+
+        if (rawActivities.length > 0 && layout.sorts.length > 0) {
+          console.log(`Sorting WBS "${wbs.wbs_name}" (level ${level}): ${rawActivities.length} activities, sort by ${layout.sorts[0].field} ${layout.sorts[0].direction}`);
+        }
 
         function countDescendantActivities(nodeId: string): number {
           if (descendantCountCache.has(nodeId)) return descendantCountCache.get(nodeId)!;
@@ -720,13 +725,16 @@ function GanttViewerContent() {
     const groups = new Map<string, { label: string; activities: Activity[] }>();
 
     result.forEach(activity => {
-      let groupKey = '';
-      let groupLabel = '';
+      let groupKey = '(None)';
+      let groupLabel = '(None)';
 
       if (layout.grouping.type === 'code' && layout.grouping.codeTypeId) {
         const activityCodes = codeAssignments.get(activity.id);
-        groupLabel = activityCodes?.get(layout.grouping.codeTypeId) || '(None)';
-        groupKey = groupLabel;
+        const codeValue = activityCodes?.get(layout.grouping.codeTypeId);
+        if (codeValue) {
+          groupLabel = codeValue;
+          groupKey = codeValue;
+        }
       }
 
       if (!groups.has(groupKey)) {
