@@ -3,7 +3,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
-import { Calendar, ArrowLeft } from 'lucide-react';
+import { Calendar as CalendarIcon, ArrowLeft } from 'lucide-react';
 import { GanttLayoutProvider, useGanttLayout } from '../contexts/GanttLayoutContext';
 import ResizablePanels from '../components/gantt/ResizablePanels';
 import ActivityTableAdvanced from '../components/gantt/ActivityTableAdvanced';
@@ -820,7 +820,7 @@ function GanttViewerContent() {
               <ArrowLeft className="w-5 h-5 text-gray-600" />
             </button>
             <div className="flex items-center gap-3">
-              <Calendar className="w-6 h-6 text-blue-600" />
+              <CalendarIcon className="w-6 h-6 text-blue-600" />
               <div>
                 <h1 className="text-lg font-semibold text-gray-900">
                   {version?.version_label}
