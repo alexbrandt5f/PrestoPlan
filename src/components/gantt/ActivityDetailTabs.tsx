@@ -492,15 +492,15 @@ export default function ActivityDetailTabs({
                     <div className="text-sm text-gray-500">No predecessors</div>
                   ) : (
                     <div className="border border-gray-200 rounded overflow-hidden">
-                      <table className="w-full text-xs">
+                      <table className="w-full text-xs table-fixed">
                         <thead className="bg-gray-50">
                           <tr>
-                            <th className="px-2 py-1 text-left font-medium text-gray-700 w-20">Activity ID</th>
+                            <th className="px-2 py-1 text-left font-medium text-gray-700 w-16">Activity ID</th>
                             <th className="px-2 py-1 text-left font-medium text-gray-700">Activity Name</th>
-                            <th className="px-2 py-1 text-left font-medium text-gray-700 w-16">Type/Lag</th>
-                            <th className="px-2 py-1 text-right font-medium text-gray-700 w-16">Rel Free Float</th>
-                            <th className="px-2 py-1 text-center font-medium text-gray-700 w-16">Driving</th>
-                            <th className="px-2 py-1 text-center font-medium text-gray-700 w-20">Action</th>
+                            <th className="px-2 py-1 text-left font-medium text-gray-700 w-14">Type/Lag</th>
+                            <th className="px-2 py-1 text-right font-medium text-gray-700 w-12">Rel Free Float</th>
+                            <th className="px-2 py-1 text-center font-medium text-gray-700 w-14">Driving</th>
+                            <th className="px-2 py-1 text-center font-medium text-gray-700 w-16">Action</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-200">
@@ -553,15 +553,15 @@ export default function ActivityDetailTabs({
                     <div className="text-sm text-gray-500">No successors</div>
                   ) : (
                     <div className="border border-gray-200 rounded overflow-hidden">
-                      <table className="w-full text-xs">
+                      <table className="w-full text-xs table-fixed">
                         <thead className="bg-gray-50">
                           <tr>
-                            <th className="px-2 py-1 text-left font-medium text-gray-700 w-20">Activity ID</th>
+                            <th className="px-2 py-1 text-left font-medium text-gray-700 w-16">Activity ID</th>
                             <th className="px-2 py-1 text-left font-medium text-gray-700">Activity Name</th>
-                            <th className="px-2 py-1 text-left font-medium text-gray-700 w-16">Type/Lag</th>
-                            <th className="px-2 py-1 text-right font-medium text-gray-700 w-16">Rel Free Float</th>
-                            <th className="px-2 py-1 text-center font-medium text-gray-700 w-16">Driving</th>
-                            <th className="px-2 py-1 text-center font-medium text-gray-700 w-20">Action</th>
+                            <th className="px-2 py-1 text-left font-medium text-gray-700 w-14">Type/Lag</th>
+                            <th className="px-2 py-1 text-right font-medium text-gray-700 w-12">Rel Free Float</th>
+                            <th className="px-2 py-1 text-center font-medium text-gray-700 w-14">Driving</th>
+                            <th className="px-2 py-1 text-center font-medium text-gray-700 w-16">Action</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-200">
