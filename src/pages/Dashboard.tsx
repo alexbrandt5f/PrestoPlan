@@ -10,12 +10,13 @@ import { supabase } from '../lib/supabase';
 import { Loader2, FolderOpen, Plus, Info } from 'lucide-react';
 
 export function Dashboard() {
-  const { company, loading: companyLoading } = useCompany();
+  const { company, loading: companyLoading, userRole } = useCompany();
   const { isSettingUp } = useWorkspaceSetup();
   const { projects, loading: projectsLoading, refetch } = useProjects(company?.id);
   const { showToast } = useToast();
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
+  const isAdmin = userRole === 'admin';
   const activeProjectCount = projects.filter((p) => p.status === 'active').length;
   const isFreeTierLimit = company?.plan_type === 'free' && activeProjectCount >= 5;
 
@@ -78,21 +79,23 @@ export function Dashboard() {
               <FolderOpen className="w-6 h-6 text-[#1B4F72] mr-2" />
               <h2 className="text-xl font-semibold text-gray-800">My Projects</h2>
             </div>
-            <div className="relative group">
-              <button
-                onClick={() => setIsCreateModalOpen(true)}
-                disabled={isFreeTierLimit}
-                className="flex items-center gap-2 px-4 py-2 bg-[#2E86C1] text-white rounded-lg hover:bg-[#1B4F72] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <Plus className="w-4 h-4" />
-                New Project
-              </button>
-              {isFreeTierLimit && (
-                <div className="invisible group-hover:visible absolute right-0 top-full mt-2 w-64 p-2 bg-gray-900 text-white text-xs rounded shadow-lg z-10">
-                  Free tier limit: 5 projects
-                </div>
-              )}
-            </div>
+            {isAdmin && (
+              <div className="relative group">
+                <button
+                  onClick={() => setIsCreateModalOpen(true)}
+                  disabled={isFreeTierLimit}
+                  className="flex items-center gap-2 px-4 py-2 bg-[#2E86C1] text-white rounded-lg hover:bg-[#1B4F72] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Plus className="w-4 h-4" />
+                  New Project
+                </button>
+                {isFreeTierLimit && (
+                  <div className="invisible group-hover:visible absolute right-0 top-full mt-2 w-64 p-2 bg-gray-900 text-white text-xs rounded shadow-lg z-10">
+                    Free tier limit: 5 projects
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="p-6">
@@ -114,13 +117,15 @@ export function Dashboard() {
                 <p className="text-sm text-gray-500 mb-4">
                   Create your first project to get started!
                 </p>
-                <button
-                  onClick={() => setIsCreateModalOpen(true)}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-[#2E86C1] text-white rounded-lg hover:bg-[#1B4F72] transition-colors"
-                >
-                  <Plus className="w-4 h-4" />
-                  New Project
-                </button>
+                {isAdmin && (
+                  <button
+                    onClick={() => setIsCreateModalOpen(true)}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-[#2E86C1] text-white rounded-lg hover:bg-[#1B4F72] transition-colors"
+                  >
+                    <Plus className="w-4 h-4" />
+                    New Project
+                  </button>
+                )}
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
