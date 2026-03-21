@@ -52,12 +52,26 @@ const DEFAULT_QUICK_FILTERS: QuickFilterState = {
 };
 
 export const DEFAULT_WBS_BAND_COLORS = [
-  '#1E3A5F',
-  '#2B6CB0',
-  '#4299E1',
-  '#90CDF4',
-  '#BEE3F8',
-  '#EBF8FF',
+  '#1B2A4A',  // Level 0:  Dark navy
+  '#6B3A2A',  // Level 1:  Dark rust
+  '#1E4D6E',  // Level 2:  Deep teal-blue
+  '#7A5C1F',  // Level 3:  Dark goldenrod
+  '#2A6B5E',  // Level 4:  Deep teal-green
+  '#8B4F4F',  // Level 5:  Muted brick red
+  '#3A7CA5',  // Level 6:  Steel blue
+  '#B8860B',  // Level 7:  Dark goldenrod (classic)
+  '#4A9E8E',  // Level 8:  Medium teal
+  '#C07050',  // Level 9:  Terra cotta
+  '#6EB5D0',  // Level 10: Sky blue
+  '#D4A84B',  // Level 11: Warm gold
+  '#7ECFB8',  // Level 12: Seafoam green
+  '#D4937A',  // Level 13: Salmon
+  '#9BC8E8',  // Level 14: Light steel blue
+  '#E8C870',  // Level 15: Light gold
+  '#B0DED0',  // Level 16: Pale mint
+  '#E8B8A8',  // Level 17: Pale peach
+  '#C5DEF0',  // Level 18: Pale blue
+  '#F0E0B0',  // Level 19: Pale cream gold
 ];
 
 const DEFAULT_LAYOUT: GanttLayoutState = {
