@@ -3,12 +3,19 @@ import { GanttLayoutState, ColumnDefinition, SortConfig, FilterCondition, GroupC
 
 interface GanttLayoutContextType {
   layout: GanttLayoutState;
+  activeLayoutId: string | null;
+  activeLayoutName: string | null;
+  isDirty: boolean;
   updateColumns: (columns: ColumnDefinition[]) => void;
   updateSorts: (sorts: SortConfig[]) => void;
   updateFilters: (filters: FilterCondition[]) => void;
   updateGrouping: (grouping: GroupConfig) => void;
   updateViewSettings: (settings: Partial<ViewSettings>) => void;
   resetLayout: () => void;
+  loadLayout: (layoutId: string, name: string, definition: GanttLayoutState) => void;
+  loadDefault: () => void;
+  markClean: () => void;
+  setActiveLayout: (id: string | null, name: string | null) => void;
 }
 
 const GanttLayoutContext = createContext<GanttLayoutContextType | undefined>(undefined);
@@ -50,9 +57,22 @@ const DEFAULT_LAYOUT: GanttLayoutState = {
 
 export function GanttLayoutProvider({ children, scheduleVersionId }: { children: ReactNode; scheduleVersionId: string }) {
   const [layout, setLayout] = useState<GanttLayoutState>(DEFAULT_LAYOUT);
+  const [activeLayoutId, setActiveLayoutId] = useState<string | null>(null);
+  const [activeLayoutName, setActiveLayoutName] = useState<string | null>(null);
+  const [isDirty, setIsDirty] = useState(false);
 
   useEffect(() => {
     const saved = localStorage.getItem(`gantt-layout-${scheduleVersionId}`);
+    const savedLayoutId = localStorage.getItem(`gantt-active-layout-id-${scheduleVersionId}`);
+    const savedLayoutName = localStorage.getItem(`gantt-active-layout-name-${scheduleVersionId}`);
+
+    if (savedLayoutId) {
+      setActiveLayoutId(savedLayoutId);
+    }
+    if (savedLayoutName) {
+      setActiveLayoutName(savedLayoutName);
+    }
+
     if (saved) {
       try {
         const parsedLayout = JSON.parse(saved);
@@ -88,20 +108,40 @@ export function GanttLayoutProvider({ children, scheduleVersionId }: { children:
     localStorage.setItem(`gantt-layout-${scheduleVersionId}`, JSON.stringify(layout));
   }, [layout, scheduleVersionId]);
 
+  useEffect(() => {
+    if (activeLayoutId) {
+      localStorage.setItem(`gantt-active-layout-id-${scheduleVersionId}`, activeLayoutId);
+    } else {
+      localStorage.removeItem(`gantt-active-layout-id-${scheduleVersionId}`);
+    }
+  }, [activeLayoutId, scheduleVersionId]);
+
+  useEffect(() => {
+    if (activeLayoutName) {
+      localStorage.setItem(`gantt-active-layout-name-${scheduleVersionId}`, activeLayoutName);
+    } else {
+      localStorage.removeItem(`gantt-active-layout-name-${scheduleVersionId}`);
+    }
+  }, [activeLayoutName, scheduleVersionId]);
+
   const updateColumns = (columns: ColumnDefinition[]) => {
     setLayout(prev => ({ ...prev, columns }));
+    setIsDirty(true);
   };
 
   const updateSorts = (sorts: SortConfig[]) => {
     setLayout(prev => ({ ...prev, sorts }));
+    setIsDirty(true);
   };
 
   const updateFilters = (filters: FilterCondition[]) => {
     setLayout(prev => ({ ...prev, filters }));
+    setIsDirty(true);
   };
 
   const updateGrouping = (grouping: GroupConfig) => {
     setLayout(prev => ({ ...prev, grouping }));
+    setIsDirty(true);
   };
 
   const updateViewSettings = (settings: Partial<ViewSettings>) => {
@@ -109,22 +149,54 @@ export function GanttLayoutProvider({ children, scheduleVersionId }: { children:
       ...prev,
       viewSettings: { ...prev.viewSettings, ...settings }
     }));
+    setIsDirty(true);
   };
 
   const resetLayout = () => {
     setLayout(DEFAULT_LAYOUT);
+    setIsDirty(true);
+  };
+
+  const loadLayout = (layoutId: string, name: string, definition: GanttLayoutState) => {
+    setLayout(definition);
+    setActiveLayoutId(layoutId);
+    setActiveLayoutName(name);
+    setIsDirty(false);
+  };
+
+  const loadDefault = () => {
+    setLayout(DEFAULT_LAYOUT);
+    setActiveLayoutId(null);
+    setActiveLayoutName(null);
+    setIsDirty(false);
+  };
+
+  const markClean = () => {
+    setIsDirty(false);
+  };
+
+  const setActiveLayout = (id: string | null, name: string | null) => {
+    setActiveLayoutId(id);
+    setActiveLayoutName(name);
   };
 
   return (
     <GanttLayoutContext.Provider
       value={{
         layout,
+        activeLayoutId,
+        activeLayoutName,
+        isDirty,
         updateColumns,
         updateSorts,
         updateFilters,
         updateGrouping,
         updateViewSettings,
-        resetLayout
+        resetLayout,
+        loadLayout,
+        loadDefault,
+        markClean,
+        setActiveLayout
       }}
     >
       {children}

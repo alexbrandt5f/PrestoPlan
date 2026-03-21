@@ -4,15 +4,18 @@ import { useGanttLayout } from '../../contexts/GanttLayoutContext';
 import ColumnPicker from './ColumnPicker';
 import FilterBuilder from './FilterBuilder';
 import SettingsPanel from './SettingsPanel';
+import { LayoutManager } from './LayoutManager';
 
 interface GanttToolbarProps {
   scheduleVersionId: string;
+  projectId: string;
+  companyId: string;
   onGoToDataDate: () => void;
   dataDate: string | null;
   onToggleColorLegend?: () => void;
 }
 
-export default function GanttToolbar({ scheduleVersionId, onGoToDataDate, dataDate, onToggleColorLegend }: GanttToolbarProps) {
+export default function GanttToolbar({ scheduleVersionId, projectId, companyId, onGoToDataDate, dataDate, onToggleColorLegend }: GanttToolbarProps) {
   const { layout, updateColumns, updateFilters } = useGanttLayout();
   const [showColumnPicker, setShowColumnPicker] = useState(false);
   const [showFilterBuilder, setShowFilterBuilder] = useState(false);
@@ -23,6 +26,14 @@ export default function GanttToolbar({ scheduleVersionId, onGoToDataDate, dataDa
   return (
     <>
       <div className="flex items-center gap-2">
+        <LayoutManager
+          projectId={projectId}
+          scheduleVersionId={scheduleVersionId}
+          companyId={companyId}
+        />
+
+        <div className="h-6 w-px bg-gray-300 mx-1"></div>
+
         <button
           onClick={() => setShowColumnPicker(true)}
           className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50"

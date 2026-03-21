@@ -35,6 +35,7 @@ interface CpmProject {
 
 interface Project {
   id: string;
+  company_id: string;
   settings: {
     near_critical_float_threshold?: number;
   };
@@ -122,7 +123,7 @@ function GanttViewerContent() {
       const [projectRes, versionRes, calendarsRes, cpmProjectRes, rootWbsRes] = await Promise.all([
         supabase
           .from('projects')
-          .select('id, settings')
+          .select('id, settings, company_id')
           .eq('id', projectId)
           .maybeSingle(),
         supabase
@@ -688,6 +689,8 @@ function GanttViewerContent() {
 
           <GanttToolbar
             scheduleVersionId={versionId || ''}
+            projectId={projectId || ''}
+            companyId={project?.company_id || ''}
             onGoToDataDate={handleGoToDataDate}
             dataDate={version?.data_date || null}
             onToggleColorLegend={() => setShowColorLegend(!showColorLegend)}

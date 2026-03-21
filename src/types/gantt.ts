@@ -44,4 +44,5 @@ export interface GanttLayoutState {
   filters: FilterCondition[];
   grouping: GroupConfig;
   viewSettings: ViewSettings;
+  quickFilters?: any;
 }
