@@ -33,6 +33,9 @@ export function Navbar() {
   const navigate = useNavigate();
   const location = useLocation();
 
+  /** Whether the current user is an admin of the active company */
+  const isAdmin = userRole === 'admin';
+
   // Company switcher dropdown state
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
