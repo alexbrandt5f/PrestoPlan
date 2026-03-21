@@ -216,8 +216,8 @@ export function Navbar() {
 
           {/* Right: Nav links + User info + Logout */}
           <div className="flex items-center space-x-4">
-            {/* Team link (admin only, non-personal workspace only) */}
-            {isAdmin && company && !company.is_personal && (
+            {/* Team link (admin only) */}
+            {isAdmin && company && (
               <button
                 onClick={() => navigate('/team')}
                 className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
