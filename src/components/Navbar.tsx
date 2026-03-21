@@ -35,6 +35,7 @@ export function Navbar() {
 
   /** Whether the current user is an admin of the active company */
   const isAdmin = userRole === 'admin';
+  console.log('NAVBAR DEBUG:', { isAdmin, userRole, companyId: company?.id, companyName: company?.name });
 
   // Company switcher dropdown state
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
