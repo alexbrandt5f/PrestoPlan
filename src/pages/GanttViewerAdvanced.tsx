@@ -661,6 +661,10 @@ function GanttViewerContent() {
         }
         const totalActivities = countDescendantActivities(wbsId);
 
+        // Skip empty groups — no activities in this node or any descendant
+        // This covers both "never had activities" and "all activities filtered out"
+        if (totalActivities === 0) return;
+
         wbsHierarchy.push({
           type: 'group',
           groupKey: wbsId,
@@ -810,32 +814,31 @@ function GanttViewerContent() {
 
   return (
     <div className="h-screen flex flex-col bg-gray-50">
-      <div className="bg-white border-b border-gray-200 px-6 py-3 flex-shrink-0">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
+      <div className="bg-white border-b border-gray-200 px-4 py-1.5 flex-shrink-0">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 min-w-0">
             <button
               onClick={() => navigate(`/project/${projectId}`)}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              className="p-1 hover:bg-gray-100 rounded transition-colors flex-shrink-0"
+              title="Back to project"
             >
-              <ArrowLeft className="w-5 h-5 text-gray-600" />
+              <ArrowLeft className="w-4 h-4 text-gray-500" />
             </button>
-            <div className="flex items-center gap-3">
-              <CalendarIcon className="w-6 h-6 text-blue-600" />
-              <div>
-                <h1 className="text-lg font-semibold text-gray-900">
-                  {version?.version_label}
-                </h1>
-                {rootWbsName && (
-                  <p className="text-sm text-gray-600">
-                    {rootWbsName}
-                  </p>
-                )}
-                <p className="text-sm text-gray-500">
-                  {groupedActivities.filter(i => i.type === 'activity').length.toLocaleString()} activities
-                  {backgroundLoading && <span className="ml-2 text-blue-600">(loading more...)</span>}
-                </p>
-              </div>
-            </div>
+            <span className="text-sm font-semibold text-gray-900 truncate" title={version?.version_label || ''}>
+              {version?.version_label}
+            </span>
+            {rootWbsName && (
+              <>
+                <span className="text-gray-300 flex-shrink-0">|</span>
+                <span className="text-xs text-gray-500 truncate" title={rootWbsName}>
+                  {rootWbsName}
+                </span>
+              </>
+            )}
+            <span className="text-gray-300 flex-shrink-0">|</span>
+            <span className="text-xs text-gray-400 flex-shrink-0">
+              {groupedActivities.filter(i => i.type === 'activity').length.toLocaleString()} activities
+            </span>
           </div>
 
           <GanttToolbar
