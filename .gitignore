@@ -21,3 +21,15 @@ dist-ssr
 *.sln
 *.sw?
 .env
+
+# ============================================================================
+# PrestoPlan additions
+# ============================================================================
+
+# Vite temp files (generated during dev server startup)
+*.timestamp-*.mjs
+
+# Environment variables (contains secrets)
+.env
+.env.local
+.env.*.local
