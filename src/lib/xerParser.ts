@@ -30,26 +30,9 @@ export function parseXER(content: string): XERTable[] {
   return tables;
 }
 
-function mapTaskType(xerType: string): string {
-  const mapping: Record<string, string> = {
-    'TT_Task': 'task_dependent',
-    'TT_Rsrc': 'resource_dependent',
-    'TT_LOE': 'level_of_effort',
-    'TT_Mile': 'finish_milestone',
-    'TT_FinMile': 'finish_milestone',
-    'TT_WBS': 'wbs_summary',
-  };
-  return mapping[xerType] || 'task_dependent';
-}
-
-function mapStatusCode(xerStatus: string): string {
-  const mapping: Record<string, string> = {
-    'TK_NotStart': 'not_started',
-    'TK_Active': 'in_progress',
-    'TK_Complete': 'complete',
-  };
-  return mapping[xerStatus] || 'not_started';
-}
+// NOTE: mapTaskType and mapStatusCode were previously defined here but were
+// dead code (defined but never called — the worker does the actual mapping).
+// They now live in activityUtils.ts as the single source of truth.
 
 async function transformTasksInWorker(
   table: XERTable,
