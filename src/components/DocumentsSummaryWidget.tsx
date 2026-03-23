@@ -209,7 +209,9 @@ export function DocumentsSummaryWidget({ projectId, companyId, companyPlan }: Pr
           companyId={companyId}
           scheduleVersions={versions}
           onClose={() => setShowUploadModal(false)}
-          onSuccess={refetch}
+          onSuccess={async () => {
+            await refetch();
+          }}
         />
       )}
     </>

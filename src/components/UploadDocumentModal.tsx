@@ -12,7 +12,7 @@ import { useToast } from '../contexts/ToastContext';
 
 interface ScheduleVersion {
   id: string;
-  version_name: string;
+  version_label: string;
   created_at: string;
 }
 
@@ -53,6 +53,10 @@ export function UploadDocumentModal({
   const sortedVersions = [...scheduleVersions].sort(
     (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
   );
+
+  console.log('[UploadDocumentModal] projectId:', projectId);
+  console.log('[UploadDocumentModal] scheduleVersions:', scheduleVersions);
+  console.log('[UploadDocumentModal] sortedVersions:', sortedVersions);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -149,7 +153,9 @@ export function UploadDocumentModal({
       setUploadProgress(100);
 
       showToast('Document uploaded successfully', 'success');
-      onSuccess();
+
+      // Wait for parent to refetch documents before closing
+      await Promise.resolve(onSuccess());
       onClose();
     } catch (err) {
       showToast(
@@ -343,7 +349,7 @@ export function UploadDocumentModal({
                   <option value="">Select a version...</option>
                   {sortedVersions.map((version) => (
                     <option key={version.id} value={version.id}>
-                      {version.version_name} (
+                      {version.version_label} (
                       {new Date(version.created_at).toLocaleDateString()})
                     </option>
                   ))}

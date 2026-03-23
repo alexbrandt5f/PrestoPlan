@@ -502,7 +502,9 @@ export function DocumentsPage() {
           companyId={company!.id}
           scheduleVersions={versions}
           onClose={() => setShowUploadModal(false)}
-          onSuccess={refetch}
+          onSuccess={async () => {
+            await refetch();
+          }}
         />
       )}
     </div>

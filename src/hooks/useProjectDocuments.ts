@@ -45,13 +45,13 @@ export function useProjectDocuments(projectId: string) {
       setLoading(true);
       setError(null);
 
-      const { data, error: fetchError } = await supabase
+      // Step 1: Fetch documents with document types
+      const { data: docs, error: fetchError } = await supabase
         .from('project_documents')
         .select(
           `
           *,
-          document_type:document_types(name, sort_order),
-          uploader:user_profiles!project_documents_uploaded_by_fkey(display_name)
+          document_type:document_types(name, sort_order)
         `
         )
         .eq('project_id', projectId)
@@ -63,7 +63,37 @@ export function useProjectDocuments(projectId: string) {
         return;
       }
 
-      setDocuments(data || []);
+      if (!docs || docs.length === 0) {
+        setDocuments([]);
+        return;
+      }
+
+      // Step 2: Collect unique uploaded_by user IDs
+      const userIds = [...new Set(docs.map((d) => d.uploaded_by).filter(Boolean))];
+
+      // Step 3: Fetch profiles for those IDs
+      const { data: profiles, error: profilesError } = await supabase
+        .from('user_profiles')
+        .select('id, display_name')
+        .in('id', userIds);
+
+      if (profilesError) {
+        console.warn('[useProjectDocuments] Error fetching user profiles:', profilesError);
+      }
+
+      // Step 4: Merge client-side
+      const profileMap = Object.fromEntries(
+        (profiles || []).map((p) => [p.id, p.display_name])
+      );
+
+      const merged = docs.map((d) => ({
+        ...d,
+        uploader: {
+          display_name: profileMap[d.uploaded_by] || 'Unknown',
+        },
+      }));
+
+      setDocuments(merged);
     } catch (err) {
       console.error('[useProjectDocuments] Unexpected error:', err);
       setError(err instanceof Error ? err.message : 'Failed to load documents');
