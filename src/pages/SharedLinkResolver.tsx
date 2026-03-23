@@ -65,7 +65,10 @@ export default function SharedLinkResolver() {
         targetVersionId = latestVersion.id;
       }
 
-      let targetUrl = `/project/${link.project_id}/gantt/${targetVersionId}`;
+      // Build the target URL. Must match the route in App.tsx:
+      //   <Route path="/project/:projectId/version/:versionId" ... />
+      // Previously this incorrectly used /gantt/ which matched no route.
+      let targetUrl = `/project/${link.project_id}/version/${targetVersionId}`;
 
       if (link.layout_id) {
         targetUrl += `?layout=${link.layout_id}`;
