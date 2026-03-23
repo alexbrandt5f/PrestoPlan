@@ -204,15 +204,41 @@ export default function GanttChartAdvanced({
     requestAnimationFrame(animate);
   }, [selectedActivity, visibleGroupedActivities]);
 
+  /**
+   * Loads all relationships for the schedule version with pagination.
+   *
+   * Supabase PostgREST (PostgreSQL REST API) defaults to 1,000 rows per
+   * request. A schedule with 9,000+ activities can easily have 15,000+
+   * relationships. Without pagination, results are silently truncated.
+   */
   async function loadRelationships() {
-    const { data } = await supabase
-      .from('cpm_relationships')
-      .select('predecessor_activity_id, successor_activity_id, relationship_type, is_driving, relationship_float_hours')
-      .eq('schedule_version_id', scheduleVersionId);
+    const PAGE_SIZE = 1000;
+    const allRelationships: Relationship[] = [];
+    let offset = 0;
+    let hasMore = true;
 
-    if (data) {
-      setRelationships(data);
+    while (hasMore) {
+      const { data, error } = await supabase
+        .from('cpm_relationships')
+        .select('predecessor_activity_id, successor_activity_id, relationship_type, is_driving, relationship_float_hours')
+        .eq('schedule_version_id', scheduleVersionId)
+        .range(offset, offset + PAGE_SIZE - 1);
+
+      if (error) {
+        console.error('Error loading relationships:', error);
+        break;
+      }
+
+      if (data && data.length > 0) {
+        allRelationships.push(...data);
+        offset += PAGE_SIZE;
+        hasMore = data.length === PAGE_SIZE;
+      } else {
+        hasMore = false;
+      }
     }
+
+    setRelationships(allRelationships);
   }
 
   const activityMap = useMemo(() => {
@@ -636,10 +662,16 @@ export default function GanttChartAdvanced({
   }
 
   function drawActivities(ctx: CanvasRenderingContext2D, scrollTop: number, scrollLeft: number, height: number) {
-    visibleGroupedActivities.forEach((item, index) => {
-      const y = HEADER_HEIGHT + (index * ROW_HEIGHT) - scrollTop;
+    // Calculate the visible row range to avoid iterating all activities.
+    // Only rows within the viewport need to be drawn. For 9,346 activities
+    // this reduces per-frame iteration from ~9,346 to ~40.
+    const startIndex = Math.max(0, Math.floor((scrollTop - HEADER_HEIGHT) / ROW_HEIGHT));
+    const visibleCount = Math.ceil((height - HEADER_HEIGHT) / ROW_HEIGHT) + 2; // +2 for partial rows at edges
+    const endIndex = Math.min(visibleGroupedActivities.length, startIndex + visibleCount);
 
-      if (y + ROW_HEIGHT < HEADER_HEIGHT || y > height) return;
+    for (let index = startIndex; index < endIndex; index++) {
+      const item = visibleGroupedActivities[index];
+      const y = HEADER_HEIGHT + (index * ROW_HEIGHT) - scrollTop;
 
       if (item.type === 'group') {
         const bandColors = layout.viewSettings.wbsBandColors || DEFAULT_WBS_BAND_COLORS;
@@ -776,7 +808,7 @@ export default function GanttChartAdvanced({
           ctx.fillText(activity.activity_name, x2 + 6, barY + BAR_HEIGHT / 2 + 4);
         }
       }
-    });
+    }
   }
 
   function drawRelationships(ctx: CanvasRenderingContext2D, scrollTop: number, scrollLeft: number) {
@@ -825,6 +857,15 @@ export default function GanttChartAdvanced({
     const STUB = 8;
     const ARROW_SIZE = 5;
 
+    // Pre-build index for O(1) lookups instead of O(N) findIndex per relationship.
+    // Without this, 15K relationships × 9K activities = ~270M comparisons per frame.
+    const activityRowIndex = new Map<string, number>();
+    visibleGroupedActivities.forEach((item, index) => {
+      if (item.type === 'activity' && item.activity) {
+        activityRowIndex.set(item.activity.id, index);
+      }
+    });
+
     filteredRels.forEach(rel => {
       const pred = activityMap.get(rel.predecessor_activity_id);
       const succ = activityMap.get(rel.successor_activity_id);
@@ -836,8 +877,8 @@ export default function GanttChartAdvanced({
 
       if (!predDates.start || !predDates.finish || !succDates.start || !succDates.finish) return;
 
-      const predIndex = visibleGroupedActivities.findIndex(item => item.type === 'activity' && item.activity?.id === pred.id);
-      const succIndex = visibleGroupedActivities.findIndex(item => item.type === 'activity' && item.activity?.id === succ.id);
+      const predIndex = activityRowIndex.get(pred.id) ?? -1;
+      const succIndex = activityRowIndex.get(succ.id) ?? -1;
 
       if (predIndex === -1 || succIndex === -1) return;
 

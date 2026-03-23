@@ -237,17 +237,34 @@ export default function ActivityTableAdvanced({
   useEffect(() => {
     if (!resizingColumn) return;
 
+    // Track width during drag without triggering React re-renders on every pixel.
+    // The final width is committed to state once on mouseup instead of ~300 times
+    // during a typical drag. This eliminates per-pixel localStorage writes,
+    // layout dirty flags, and processedActivities recomputation.
+    let currentWidth = resizeStartWidth;
+
     function handleMouseMove(e: MouseEvent) {
       const delta = e.clientX - resizeStartX;
-      const newWidth = Math.max(60, resizeStartWidth + delta);
+      currentWidth = Math.max(60, resizeStartWidth + delta);
 
-      const updated = layout.columns.map(col =>
-        col.id === resizingColumn ? { ...col, width: newWidth } : col
-      );
-      updateColumns(updated);
+      // Direct DOM update for responsive visual feedback without React re-renders
+      const headerEl = document.querySelector(`[data-column-id="${resizingColumn}"]`);
+      if (headerEl) {
+        (headerEl as HTMLElement).style.width = `${currentWidth}px`;
+      }
+      // Also update all cell widths for this column
+      const cellEls = document.querySelectorAll(`[data-cell-column-id="${resizingColumn}"]`);
+      cellEls.forEach(el => {
+        (el as HTMLElement).style.width = `${currentWidth}px`;
+      });
     }
 
     function handleMouseUp() {
+      // Single state update on mouseup instead of per-pixel updates
+      const updated = layout.columns.map(col =>
+        col.id === resizingColumn ? { ...col, width: currentWidth } : col
+      );
+      updateColumns(updated);
       setResizingColumn(null);
     }
 
@@ -259,6 +276,7 @@ export default function ActivityTableAdvanced({
       document.removeEventListener('mouseup', handleMouseUp);
     };
   }, [resizingColumn, resizeStartX, resizeStartWidth, layout.columns, updateColumns]);
+
 
   useEffect(() => {
     const scrollContainer = parentRef.current;
@@ -436,6 +454,7 @@ export default function ActivityTableAdvanced({
               return (
                 <div
                   key={column.id}
+                  data-column-id={column.id}
                   className="relative flex items-center border-r border-gray-200 px-3 bg-gray-50 select-none"
                   style={{ width: column.width, height: HEADER_HEIGHT }}
                 >
@@ -560,6 +579,7 @@ export default function ActivityTableAdvanced({
                   return (
                     <div
                       key={column.id}
+                      data-cell-column-id={column.id}
                       className={`border-r border-gray-100 px-3 text-xs flex items-center overflow-hidden ${isNumericColumn ? 'justify-end' : ''}`}
                       style={{ width: column.width }}
                     >
