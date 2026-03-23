@@ -26,8 +26,25 @@ export function DocumentsSummaryWidget({ projectId, companyId, companyPlan }: Pr
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [userRole, setUserRole] = useState<'viewer' | 'editor' | 'admin' | null>(null);
+  const [currentPlan, setCurrentPlan] = useState<string>(companyPlan);
 
-  const isPaidPlan = companyPlan === 'paid';
+  const isPaidPlan = currentPlan === 'paid';
+
+  useEffect(() => {
+    const fetchCompanyPlan = async () => {
+      const { data, error } = await supabase
+        .from('companies')
+        .select('plan')
+        .eq('id', companyId)
+        .single();
+
+      if (data && !error) {
+        setCurrentPlan(data.plan);
+      }
+    };
+
+    fetchCompanyPlan();
+  }, [companyId]);
 
   useEffect(() => {
     const fetchUserRole = async () => {

@@ -40,7 +40,7 @@ export interface CompanyWithRole {
   id: string;
   name: string;
   slug: string;
-  plan_type: string;
+  plan: string;
   is_personal: boolean;
   role: string; // 'admin' | 'viewer' — from company_memberships
 }
@@ -84,7 +84,7 @@ export function CompanyProvider({ children }: { children: React.ReactNode }) {
     try {
       const { data: memberships, error } = await supabase
         .from('company_memberships')
-        .select('company_id, role, companies(id, name, slug, plan_type, is_personal)')
+        .select('company_id, role, companies(id, name, slug, plan, is_personal)')
         .eq('user_id', user.id)
         .eq('is_active', true);
 
@@ -109,14 +109,14 @@ export function CompanyProvider({ children }: { children: React.ReactNode }) {
             id: string;
             name: string;
             slug: string;
-            plan_type: string;
+            plan: string;
             is_personal: boolean;
           };
           return {
             id: c.id,
             name: c.name,
             slug: c.slug,
-            plan_type: c.plan_type,
+            plan: c.plan,
             is_personal: c.is_personal,
             role: m.role,
           };

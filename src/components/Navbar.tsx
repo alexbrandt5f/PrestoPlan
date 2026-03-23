@@ -9,14 +9,13 @@
  *   - Only shows the dropdown chevron if user has 2+ companies
  *   - Clicking the company name opens a dropdown listing all companies
  *   - Active company is highlighted with a checkmark
- *   - Personal workspaces show "(Personal)" suffix
  *   - Selecting a different company calls setActiveCompany() which updates
  *     the global context and persists to localStorage
  *   - Dropdown closes on outside click or Escape key
  *
- * ROLE BADGE:
- *   - Shows the user's role (Admin/Viewer) in the active company
- *   - Helps users understand their permission level at a glance
+ * BADGES:
+ *   - Plan badge: Shows "Pro" for paid plans, nothing for free plans
+ *   - Role badge: Shows the user's role (Admin/Viewer) in the active company
  */
 
 import React, { useState, useRef, useEffect } from 'react';
@@ -96,12 +95,8 @@ export function Navbar() {
 
   /**
    * Get a display-friendly name for a company.
-   * Personal workspaces show the user's email prefix + "(Personal)".
    */
   const getCompanyDisplayName = (c: CompanyWithRole): string => {
-    if (c.is_personal) {
-      return `${c.name} (Personal)`;
-    }
     return c.name;
   };
 
@@ -115,6 +110,16 @@ export function Navbar() {
     return (
       <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${colorClass}`}>
         {label}
+      </span>
+    );
+  };
+
+  /** Get plan badge based on company.plan */
+  const getPlanBadge = () => {
+    if (!company || company.plan !== 'paid') return null;
+    return (
+      <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
+        Pro
       </span>
     );
   };
@@ -153,6 +158,7 @@ export function Navbar() {
                 <span className="font-medium text-gray-800 text-sm">
                   {getCompanyDisplayName(company)}
                 </span>
+                {getPlanBadge()}
                 {getRoleBadge()}
                 {hasMultipleCompanies && (
                   <ChevronDown
