@@ -7,6 +7,7 @@ import { supabase } from '../lib/supabase';
 import { Loader2, ChevronRight, CreditCard as Edit2, Trash2, FileText, ArrowLeft, Upload, Calendar, CheckCircle, AlertCircle, Clock } from 'lucide-react';
 import { CreateProjectModal, ProjectFormData } from '../components/CreateProjectModal';
 import { UploadScheduleModal } from '../components/UploadScheduleModal';
+import { DocumentsSummaryWidget } from '../components/DocumentsSummaryWidget';
 import { useScheduleVersions } from '../hooks/useScheduleVersions';
 
 interface Project {
@@ -277,22 +278,24 @@ export function ProjectDetail() {
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow border border-gray-200 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <FileText className="w-5 h-5 text-[#1B4F72]" />
-              <h2 className="text-xl font-semibold text-gray-900">Schedule Versions</h2>
-            </div>
-            {userRole === 'admin' && (
-              <button
-                onClick={() => setIsUploadModalOpen(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-[#2E86C1] text-white rounded-lg hover:bg-[#1B4F72] transition-colors"
-              >
-                <Upload className="w-4 h-4" />
-                Upload Schedule Version
-              </button>
-            )}
-          </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+          <div className="lg:col-span-2">
+            <div className="bg-white rounded-lg shadow border border-gray-200 p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-[#1B4F72]" />
+                  <h2 className="text-xl font-semibold text-gray-900">Schedule Versions</h2>
+                </div>
+                {userRole === 'admin' && (
+                  <button
+                    onClick={() => setIsUploadModalOpen(true)}
+                    className="flex items-center gap-2 px-4 py-2 bg-[#2E86C1] text-white rounded-lg hover:bg-[#1B4F72] transition-colors"
+                  >
+                    <Upload className="w-4 h-4" />
+                    Upload Schedule Version
+                  </button>
+                )}
+              </div>
 
           {versionsLoading ? (
             <div className="flex items-center justify-center py-12">
@@ -377,6 +380,18 @@ export function ProjectDetail() {
               ))}
             </div>
           )}
+            </div>
+          </div>
+
+          <div className="lg:col-span-1">
+            {company && projectId && (
+              <DocumentsSummaryWidget
+                projectId={projectId}
+                companyId={company.id}
+                companyPlan={company.plan}
+              />
+            )}
+          </div>
         </div>
       </div>
 

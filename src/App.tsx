@@ -9,6 +9,7 @@ import { ResetPassword } from './pages/ResetPassword';
 import { UpdatePassword } from './pages/UpdatePassword';
 import { Dashboard } from './pages/Dashboard';
 import { ProjectDetail } from './pages/ProjectDetail';
+import { DocumentsPage } from './pages/DocumentsPage';
 import GanttViewerAdvanced from './pages/GanttViewerAdvanced';
 import SharedLinkResolver from './pages/SharedLinkResolver';
 import { TeamManagement } from './pages/TeamManagement';
@@ -38,6 +39,14 @@ function App() {
               element={
                 <ProtectedRoute>
                   <ProjectDetail />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/projects/:projectId/documents"
+              element={
+                <ProtectedRoute>
+                  <DocumentsPage />
                 </ProtectedRoute>
               }
             />
