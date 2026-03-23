@@ -2,6 +2,7 @@ import { useRef, useEffect, useState, useMemo, useCallback } from 'react';
 import { ChevronUp, ChevronDown, ChevronRight } from 'lucide-react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useGanttLayout, DEFAULT_WBS_BAND_COLORS } from '../../contexts/GanttLayoutContext';
+import { evaluateFilter } from '../../lib/activityUtils';
 import { hoursToWorkingDays, hoursToDays, formatDate } from '../../lib/dateUtils';
 
 function getTextColorForBg(bgColor: string): string {
@@ -195,23 +196,7 @@ export default function ActivityTableAdvanced({
     overscan: 20,
   });
 
-  function evaluateFilter(value: any, operator: string, filterValue: any, filterValue2?: any): boolean {
-    if (operator === 'isBlank') return value === null || value === undefined || value === '';
-    if (operator === 'isNotBlank') return value !== null && value !== undefined && value !== '';
-
-    const strValue = String(value || '').toLowerCase();
-    const strFilter = String(filterValue || '').toLowerCase();
-
-    switch (operator) {
-      case 'equals': return strValue === strFilter;
-      case 'notEquals': return strValue !== strFilter;
-      case 'contains': return strValue.includes(strFilter);
-      case 'greaterThan': return value > filterValue;
-      case 'lessThan': return value < filterValue;
-      case 'between': return value >= filterValue && value <= filterValue2;
-      default: return true;
-    }
-  }
+  // evaluateFilter is now imported from '../../lib/activityUtils'
 
   function handleColumnHeaderClick(field: string, shiftKey: boolean) {
     if (shiftKey) {

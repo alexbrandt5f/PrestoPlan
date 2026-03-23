@@ -351,11 +351,7 @@ export default function GanttChartAdvanced({
     return new Date(minDate.getTime() + days * (1000 * 60 * 60 * 24));
   }
 
-  function isMilestone(activity: Activity): boolean {
-    return activity.activity_type === 'start_milestone' ||
-           activity.activity_type === 'finish_milestone' ||
-           activity.original_duration_hours === 0;
-  }
+  // isMilestone is imported from '../../lib/dateUtils' (re-exported from activityUtils)
 
   function getBarColors(activity: Activity): { fill: string; outline: string; completedFill: string; completedOutline: string } {
     // Determine criticality colors for incomplete portion
