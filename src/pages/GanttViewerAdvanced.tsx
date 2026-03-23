@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { Calendar as CalendarIcon, ArrowLeft } from 'lucide-react';
 import { GanttLayoutProvider, useGanttLayout } from '../contexts/GanttLayoutContext';
+import { evaluateFilter } from '../lib/activityUtils';
 import ResizablePanels from '../components/gantt/ResizablePanels';
 import ActivityTableAdvanced from '../components/gantt/ActivityTableAdvanced';
 import GanttChartAdvanced from '../components/gantt/GanttChartAdvanced';
@@ -765,23 +766,7 @@ function GanttViewerContent() {
     return finalResult;
   }, [processedActivities, layout.grouping, layout.filters, layout.sorts, layout.quickFilters, codeAssignments, wbsMap, calendars, version?.data_date, nearCriticalThreshold, quickFilterCodeAssignments]);
 
-  function evaluateFilter(value: any, operator: string, filterValue: any, filterValue2?: any): boolean {
-    if (operator === 'isBlank') return value === null || value === undefined || value === '';
-    if (operator === 'isNotBlank') return value !== null && value !== undefined && value !== '';
-
-    const strValue = String(value || '').toLowerCase();
-    const strFilter = String(filterValue || '').toLowerCase();
-
-    switch (operator) {
-      case 'equals': return strValue === strFilter;
-      case 'notEquals': return strValue !== strFilter;
-      case 'contains': return strValue.includes(strFilter);
-      case 'greaterThan': return value > filterValue;
-      case 'lessThan': return value < filterValue;
-      case 'between': return value >= filterValue && value <= filterValue2;
-      default: return true;
-    }
-  }
+  // evaluateFilter is now imported from '../lib/activityUtils'
 
   function handleGoToDataDate() {
     if (!version?.data_date) return;
